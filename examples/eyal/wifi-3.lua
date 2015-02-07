@@ -1,7 +1,6 @@
 -- This example works for me with "fake_it=true".
 -- It fails otherwise, either with "not enough memory" when loading the ds18b20 module (fw 20150127)
 -- or by failing to connect to the broker (fw 20150126).
--- test 1
 
 user, pass = "user", "pass";
 mqtt_host, mqtt_port = "192.168.2.7", 1883;
