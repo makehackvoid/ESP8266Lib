@@ -65,7 +65,7 @@ error loading module 'ds18b20' from file 'ds18b20.lua':
 Finally, runinng with "fake_it = true" has no issues:
 <pre>
 node.restart()
-> J¦C¦¦3j¦¦¦1¦1 ¦¦¦e¦¦¦#Y6¦¦y¦2Y<¦kF¦~¦0d¦,?<j  J¦¦x¦P¦¦¦
+> J¦C¦¦3j¦¦¦1¦1 ¦¦¦e¦¦¦
 
 NodeMCU 0.9.5 build 20150126  powered by Lua 5.1.4
 lua: cannot open init.lua
