@@ -62,7 +62,7 @@ error loading module 'ds18b20' from file 'ds18b20.lua':
   One can see that this fw uses much more memory (over 2KB more).
   Anyone knows how much memory this processor has?
 
-Finally, runinng with "fake_it = true" has no issues:
+Finally, runinng with <pre>fake_it = true</pre> has no issues:
 <pre>
 node.restart()
 > J¦C¦¦3j¦¦¦1¦1 ¦¦¦e¦¦¦
@@ -114,5 +114,6 @@ eyal/esp-07 3dC 12288
 eyal/esp-07 4dC 12288
 eyal/esp-07 5dC 12288
 </pre>
+Memory usage did not change up to 90 iterations, however after 90 times I do not see any new published values.
 
 To be continued...
