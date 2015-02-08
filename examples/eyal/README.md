@@ -10,7 +10,7 @@ wifi-4.lua (uploaded as "t")
  This is similar to the -3 but I kept the console logs.
 
   With fw 20150226 (no fp) the sensor module loads but the program soon fails:
-
+<pre>
 NodeMCU 0.9.5 build 20150126  powered by Lua 5.1.4
 lua: cannot open init.lua
 > dofile("t")
@@ -24,13 +24,13 @@ main_1
 main_2
 publishData
 mqtt.Client
-B1¦"¦:&¦;¦;!G¦R¦B¦¦d+¦¦¦??¦kD¦||¦?¦,?$j
-                                       t¦kD¦$¦¦¦¦¦
+B1Â¦"Â¦:&Â¦;Â¦;!GÂ¦RÂ¦BÂ¦Â¦d+Â¦Â¦Â¦??Â¦kDÂ¦||Â¦?Â¦,?$j
+                                       tÂ¦kDÂ¦$Â¦Â¦Â¦Â¦Â¦
 
 NodeMCU 0.9.5 build 20150126  powered by Lua 5.1.4
 lua: cannot open init.lua
 >
-
+</pre>
   BTW, after a fw flash (there is no station info) it fails to make the connection at all
 and fails early with:
 
