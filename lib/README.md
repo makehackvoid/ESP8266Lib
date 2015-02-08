@@ -8,7 +8,16 @@ simpleconfig.lua
 ----------------
 
 This module allows you store settings in a convention .ini
-style file rather than hardcoding values.
+style file rather than hardcoding values into your programs.
+
+It uses settings.ini which is the default. You can create the
+file on your pc and then transfer it to the ESP8266 module with
+a file-copy utility.
+
+settings.ini
+<pre>
+host=192.168.0.50
+</pre>
 
 To use this subroutine, first use load_config() to load all
 the values from the configuration into memory.
