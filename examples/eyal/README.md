@@ -116,4 +116,44 @@ eyal/esp-07 5dC 12288
 </pre>
 Memory usage did not change up to 90 iterations, however after 90 times I do not see any new published values. This means that the <pre>m:publish</pre> hangs, holding memory and at some point will fail the run.
 
+Here is another run with an extra print inside the 'publish' ack:
+<pre>
+> dofile("t")
+main
+ds18b20_init
+exit ds18b20_init
+main_1
+main_2
+publishData
+mqtt.Client
+m:connect
+exit publishData
+exit main_2
+exit main_1
+exit main
+> connected
+exit connected
+publish
+readTemperature
+exit readTemperature (1)
+exit publish
+published <<<<<<<<<<<<<<<<<<<<< first one published, but no more
+publish
+readTemperature
+exit readTemperature (2)
+exit publish
+publish
+readTemperature
+exit readTemperature (3)
+exit publish
+publish
+readTemperature
+exit readTemperature (4)
+exit publish
+publish
+readTemperature
+exit readTemperature (5)
+exit publish
+</pre>
+
 To be continued...
