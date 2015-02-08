@@ -33,7 +33,7 @@ lua: cannot open init.lua
 </pre>
   BTW, after a fw flash (there is no station info) it fails to make the connection at all
 and fails early with:
-
+<pre>
 NodeMCU 0.9.5 build 20150126  powered by Lua 5.1.4
 lua: cannot open init.lua
 > dofile("t")
@@ -46,9 +46,9 @@ exit ds18b20_init
 main_1
 not enough memory
 >
-
+</pre>
   With fw 20150227 it manages to fail with a proper message:
-
+<pre>
 NodeMCU 0.9.5 build 20150127  powered by Lua 5.1.4
 lua: cannot open init.lua
 > dofile("t")
@@ -58,7 +58,7 @@ used memory before=14884
 error loading module 'ds18b20' from file 'ds18b20.lua':
         not enough memory
 >
-
+</pre>
   One can see that this fw uses much more memory (over 2KB more).
   Anyone knows how much memory this processor has?
 
