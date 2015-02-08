@@ -62,4 +62,58 @@ error loading module 'ds18b20' from file 'ds18b20.lua':
   One can see that this fw uses much more memory (over 2KB more).
   Anyone knows how much memory this processor has?
 
+Finally, runinng with "fake_it = true" has no issues:
+<pre>
+node.restart()
+> J¦C¦¦3j¦¦¦1¦1 ¦¦¦e¦¦¦#Y6¦¦y¦2Y<¦kF¦~¦0d¦,?<j  J¦¦x¦P¦¦¦
+
+NodeMCU 0.9.5 build 20150126  powered by Lua 5.1.4
+lua: cannot open init.lua
+> dofile("t")
+main
+ds18b20_init
+exit ds18b20_init
+main_1
+main_2
+publishData
+mqtt.Client
+m:connect
+exit publishData
+exit main_2
+exit main_1
+exit main
+> connected
+exit connected
+publish
+readTemperature
+exit readTemperature (1)
+exit publish
+publish
+readTemperature
+exit readTemperature (2)
+exit publish
+publish
+readTemperature
+exit readTemperature (3)
+exit publish
+publish
+readTemperature
+exit readTemperature (4)
+exit publish
+publish
+readTemperature
+exit readTemperature (5)
+exit publish
+</pre>
+And the broker shows:
+<pre>
+$ mosquitto_sub -i e4 -h 192.168.2.7 -v -t 'eyal/esp-07'
+eyal/esp-07 27dC12KB
+eyal/esp-07 1dC 12288
+eyal/esp-07 2dC 12288
+eyal/esp-07 3dC 12288
+eyal/esp-07 4dC 12288
+eyal/esp-07 5dC 12288
+</pre>
+
 To be continued...
