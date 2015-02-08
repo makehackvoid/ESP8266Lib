@@ -13,11 +13,14 @@ style file rather than hardcoding values.
 To use this subroutine, first use load_config() to load all
 the values from the configuration into memory.
 
+<pre>
 > =load_config()
+</pre>
 
 Once you have done this, you can access all the values in
 the configuration using the dictionary:
 
+<pre>
 > =config['host']
 192.168.0.50
-
+</pre>
