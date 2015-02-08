@@ -114,6 +114,6 @@ eyal/esp-07 3dC 12288
 eyal/esp-07 4dC 12288
 eyal/esp-07 5dC 12288
 </pre>
-Memory usage did not change up to 90 iterations, however after 90 times I do not see any new published values.
+Memory usage did not change up to 90 iterations, however after 90 times I do not see any new published values. This means that the <pre>m:publish</pre> hangs, holding memory and at some point will fail the run.
 
 To be continued...
