@@ -117,7 +117,7 @@ eyal/esp-07 5dC 12288
 Memory usage did not change up to 90 iterations, however after 90 times I do not see any new published values. This means that the <pre>m:publish</pre> hangs, holding memory and at some point will fail the run.
 
 Here is another run with an extra print inside the 'publish' ack:
-<code>
+<pre>
 > dofile("t")
 main
 ds18b20_init
@@ -137,7 +137,7 @@ publish
 readTemperature
 exit readTemperature (1)
 exit publish
-published <<<<<<<<<<<<<<<<<<<<< first one published, but no more
+published ===================== first one published, but no more
 publish
 readTemperature
 exit readTemperature (2)
@@ -154,6 +154,6 @@ publish
 readTemperature
 exit readTemperature (5)
 exit publish
-</code>
+</pre>
 
 To be continued...
