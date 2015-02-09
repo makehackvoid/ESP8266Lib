@@ -1,5 +1,6 @@
 [ 9 Feb 15 EL] grabbed 19:40 (esp-...), 19:22 (nodemcu-...)
 
+<pre>
 cd
 git clone https://github.com/pfalcon/esp-open-sdk.git
 cd esp-open-sdk
@@ -28,3 +29,4 @@ ls -l bin
 # -rw-rw-r-- 1 esp8266 esp8266    128 Feb  9 19:22 esp_init_data_default.bin
 
 %py% esptool.py --port COM7 write_flash 0x00000 0x00000.bin 0x10000 0x10000.bin
+</pre>
