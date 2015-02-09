@@ -159,7 +159,7 @@ exit publish
 wifi-6.lua
 ----------
 
-Another test program. Made all 'local' in case I had a name clash and renames a few things.
+Another test program. Made all 'local' in case I had a name clash and renamed a few things.
 It still does not work.
 
 To be continued...
