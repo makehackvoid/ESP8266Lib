@@ -1,9 +1,10 @@
-[ 9 Feb 15 EL] grabbed 19:40 (esp-...), 19:22 (nodemcu-...)
+<b>[ 9 Feb 15 EL] Building the SDK first, then the firmware.</b>
 
 Build the SDK
 <pre>
 cd
 git clone https://github.com/pfalcon/esp-open-sdk.git
+# done at 19:40
 cd esp-open-sdk
 make STANDALONE=y
 # takes about 2.5 hours
@@ -13,6 +14,7 @@ Build the firmware
 <pre>
 cd
 git clone https://github.com/nodemcu/nodemcu-firmware.git
+# done at 19:22
 cd nodemcu-firmware
 export PATH=/home/esp8266/esp-open-sdk/xtensa-lx106-elf/bin:$PATH
 vi app/include/user_config.h
