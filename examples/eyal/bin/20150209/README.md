@@ -23,7 +23,7 @@ make
 # takes a few minutes
 </pre>
 
-The result
+The result is here
 <pre>
 ls -l bin
 #total 380
@@ -38,7 +38,7 @@ Flash as usual (this is on my windows laptop)
 c:\Python2\Python.exe esptool.py --port COM7 write_flash 0x00000 0x00000.bin 0x10000 0x10000.bin
 </pre>
 
-Note required space and where the result is
+Note required space
 <pre>
 cd
 du -sh esp-open-sdk/ nodemcu-firmware/
