@@ -31,9 +31,9 @@ ls -l bin
 # -rw-rw-r-- 1 esp8266 esp8266    128 Feb  9 19:22 esp_init_data_default.bin
 </pre>
 
-Flash as usual
+Flash as usual (this is on my windows laptop)
 <pre>
-%py% esptool.py --port COM7 write_flash 0x00000 0x00000.bin 0x10000 0x10000.bin
+c:\Python2\Python.exe esptool.py --port COM7 write_flash 0x00000 0x00000.bin 0x10000 0x10000.bin
 </pre>
 
 Note required space and where the result is
