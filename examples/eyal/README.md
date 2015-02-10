@@ -1,3 +1,8 @@
+reboot.lua
+----------
+
+A simple program that repeatedly reboots (dsleep).
+
 tRead-eyal.lua
 --------------
 
