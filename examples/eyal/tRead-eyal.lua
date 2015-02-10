@@ -89,7 +89,7 @@ function doit()
 	if nil == wifi.sta.getip() then
 		print("Setting up WIFI...")
 		wifi.setmode(wifi.STATION)
-		wifi.sta.config("eyal", "eyal;ssa;infa")
+		wifi.sta.config("user", "pass")
 		wifi.sta.connect()
 	end
 	test_count = 0
