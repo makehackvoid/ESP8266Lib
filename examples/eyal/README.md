@@ -1,9 +1,39 @@
-wifi-3.lua
+tRead-eyal.lua
+--------------
+
+A test program based on Derryn's program. Added some timing and a run counter. So far I see the same problems:
+
+1) Attempt to load ds18b20.lua gived "not enough memory"
+
+2) Running the program (without reading the temperature) repeats a few times but then locks up when a reboot (after a dsleep) does not complete. An example:
+<pre>
+NodeMCU 0.9.5 build 20150209-eyal  powered by Lua 5.1.4
+run 29
+Setting up WIFI...
+> IP unavaiable after 10 tries
+Config done after 19 tries, at 2265036, IP is 192.168.2.30
+connected at 2288687
+Temperature: 29'C
+published at 2339493
+offline at 2353611
+ŠŠŠŠ#ŠŠBŠ
+
+NodeMCU 0.9.5 build 20150209-eyal  powered by Lua 5.1.4
+run 30
+Setting up WIFI...
+> IP unavaiable after 10 tries
+Config done after 19 tries, at 2275910, IP is 192.168.2.30
+connected at 2296295
+Temperature: 30'C
+published at 2347359
+offline at 2361488
+ŠŠŠŠŠŠ"ŠŠ@Š
+</pre>
+wifi-6.lua
 ----------
-  An example of code that I use to test my app. It publishes an item periodically (no dsleep).
-  It can either just publish a count or actually read the temperature off a ds18b20. This last usage always
-  fails me with "not enough memory" when loading the required module if using firmware 20150227.
-  When using fw 20150216 it fails to connect to the mqtt broker.
+
+Another test program. Made all 'local' in case I had a name clash and renamed a few things.
+It still does not work.
 
 wifi-4.lua (uploaded as "t")
 ----------------------------
@@ -156,10 +186,9 @@ exit readTemperature (5)
 exit publish
 </pre>
 
-wifi-6.lua
+wifi-3.lua
 ----------
-
-Another test program. Made all 'local' in case I had a name clash and renamed a few things.
-It still does not work.
-
-To be continued...
+  An example of code that I use to test my app. It publishes an item periodically (no dsleep).
+  It can either just publish a count or actually read the temperature off a ds18b20. This last usage always
+  fails me with "not enough memory" when loading the required module if using firmware 20150227.
+  When using fw 20150216 it fails to connect to the mqtt broker.
