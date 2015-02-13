@@ -1,3 +1,8 @@
+tRead-2.lua
+-----------
+
+This version is able to run for a long time, if it does not get stuck right at the start.
+
 bin/20150213-1100-eyal
 ----------------------
 
