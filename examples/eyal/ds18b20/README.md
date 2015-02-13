@@ -1,7 +1,8 @@
 Publish ds18b20 readings to MQTT
 --------------------------------
 
-This is a test program.
+This is a test program, so it is not clean, with excessive prints etc.
+
 This program reads the ds18b20 and publishes it, then sleeps for 2 seconds.
 
 After some memory shortage issues (when loading ds18b20.lua) the program was broken into pieces.
