@@ -1,5 +1,6 @@
-Publish ds18b20 reading
------------------------
+Publish ds18b20 readings to MQTT
+--------------------------------
+
 This is a test program.
 This program reads the ds18b20 and publishes it, then sleeps for 2 seconds.
 
