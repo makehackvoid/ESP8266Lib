@@ -21,5 +21,7 @@ there are a few other features to note:
 I usually start a run (after uploading the modules) with
    file.remove ("runCount"); node.restart()
 
+The wakeup from dsleep did not work until recently. I use a firmware I built this morning (13/Feb) from the repository, which is available in another directory nearby.
+
 Note: this is still work in progress.
 
