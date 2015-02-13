@@ -1,3 +1,8 @@
+bin/20150213-2202-eyal
+----------------------
+
+This version includes node.compile().
+
 tRead-2.lua
 -----------
 
