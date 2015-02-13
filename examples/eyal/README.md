@@ -1,7 +1,12 @@
+bin/20150213-1100-eyal
+----------------------
+
+A build with all the latest fixes. So far looks more stable, running reboot.lua for over 400 times so far.
+
 reboot.lua
 ----------
 
-A simple program that repeatedly reboots (dsleep).
+A simple program that repeatedly reboots (5 seconds dsleep).
 
 tRead-eyal.lua
 --------------

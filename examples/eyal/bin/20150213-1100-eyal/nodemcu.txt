@@ -1,0 +1,69 @@
+[12 Feb 15 EL] A clean lubuntu install, from scratch.
+- Download and install latest Oracle VirtualBox
+  http://www.oracle.com/technetwork/server-storage/virtualbox/downloads/index.html
+- Download latest lubuntu
+  http://mirror.internode.on.net/pub/ubuntu/lubuntu/14.10/release/lubuntu-14.10r-desktop-amd64.iso
+- Create a machine: ubuntu (64 bit), RAM=1GB, SATA=8GB, Video=16MB
+  CD=lubuntu image (downloaded above)
+- Boot and install lubuntu from the CD [see details below]
+
+=== install lubuntu
+Tick: Download updates while installing
+Select: Erase disk and install Lubuntu
+Continue past the final warning
+Where are you? Sydney [or whatever you want]
+Keyboard layout: English (US) [or whatever you want
+Select: names etc.
+Tick: Require my password to log in [ or login automatically if you prefer]
+--- installation starts now
+At the end it asks to restart but seems to hang - it is waiting for you to press Enter
+On restart it offers to do an update - a good idea.
+[You can now edit apt sources list to point to your preferred mirror]
+
+After a restart it should be possible to set a larger display size.
+
+sudo apt-get install git make autoconf unrar automake libtool gcc g++ gperf \
+	flex bison texinfo gawk ncurses-dev libexpat-dev python python-serial sed
+
+Now use "Devices" "Insert Guest Additions CD image" and install these.
+	cd /media/<user>/VBOXADDITIONS...
+		or click 'autorun.sh'
+	sudo ./VBoxLinuxAdditions.run
+
+=== build the SDK
+
+cd
+git clone https://github.com/pfalcon/esp-open-sdk.git
+cd esp-open-sdk
+make STANDALONE=y
+# takes about 2.5 hours
+
+edit ~/.profile and add
+	export PATH="/home/esp8266/esp-open-sdk/xtensa-lx106-elf/bin:$PATH"
+then logout/login
+
+=== build the nodemcu firmware
+
+cd
+git clone https://github.com/nodemcu/nodemcu-firmware.git
+cd nodemcu-firmware
+export PATH=/home/esp8266/esp-open-sdk/xtensa-lx106-elf/bin:$PATH
+vi app/include/user_config.h
+# change BUILD_DATE to your liking, I used: "build 20150209-eyal"
+### [12 Feb 15 EL] It fails now due to a recent checkin.
+### edit app/libc/c_stdio.c and rename the '__P' macro' in three places
+make
+# takes a few minutes
+
+The two parts of the firmware are now in bin/
+
+$ ls -l bin
+total 384
+-rw-rw-r-- 1 eyal eyal  45872 Feb 12 20:50 0x00000.bin
+-rw-rw-r-- 1 eyal eyal 335660 Feb 12 20:50 0x10000.bin
+-rw-rw-r-- 1 eyal eyal   4096 Feb 12 19:51 blank.bin
+-rw-rw-r-- 1 eyal eyal    128 Feb 12 19:51 esp_init_data_default.bin
+
+=== flash it
+On windows I do (%py% is where my Python is):
+%py% esptool.py --port COM7 write_flash 0x00000 0x00000.bin 0x10000 0x10000.bin
