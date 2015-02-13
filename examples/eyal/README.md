@@ -1,7 +1,7 @@
 bin/20150213-1100-eyal
 ----------------------
 
-A build with all the latest fixes. So far looks more stable, running reboot.lua for over 400 times so far.
+A build with all the latest fixes. So far looks more stable, running reboot.lua for almost 500 times (and going).
 
 reboot.lua
 ----------
