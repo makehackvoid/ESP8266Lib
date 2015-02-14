@@ -3,7 +3,7 @@ Read the ds18b20 and publish to mqtt
 
 This example is broken into parts and each is run using dofile(). This reduces the memory usage.
 
-These are the used files that need to be uploaded to the es8266.
+These are the files used, that need to be uploaded to the es8266. The last two are only needed during setup and not required for the actual run.
 
 <b>init.lua</b>
 	Runs automatically after boot
