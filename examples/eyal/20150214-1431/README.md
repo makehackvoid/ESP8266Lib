@@ -27,7 +27,7 @@ These are the used files that need to be uploaded to the es8266.
 
 
 <b>compile.lua</b>
-	Run this to compile the above modules
+	Run this to compile the above modules. Needs a recent firmware (feb/13 or later). Use my 20150213-2202-eyal.
 
 <b>makePass.lua</b>
 	Run this (after entering your details) to create the necessary 'pass' file
