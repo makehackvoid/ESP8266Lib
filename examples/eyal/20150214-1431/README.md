@@ -17,7 +17,7 @@ These are the files used, that need to be uploaded to the es8266. The last two a
 	Connects to the wifi access 
 	
 <b>getPass.lua</b>
-	Read the ssdi/passphrase fro 'pass' file (see makePass later) 
+	Read the ssdi/passphrase from 'pass' file (see <b>makePass</p> later) 
 	
 <b>readTemp.lua</b>
 	Read the temperature from the ds18b20
