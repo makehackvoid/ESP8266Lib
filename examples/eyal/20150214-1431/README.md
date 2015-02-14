@@ -5,7 +5,7 @@ This example is broken into parts and each is run using dofile(). This reduces t
 
 These are the used files that need to be uploaded to the es8266.
 
-init.lua
+<b>init.lua</b>
 	Runs automatically after boot
 getPass.lua
 	Read the ssid/passphrase from a file 'pass'
