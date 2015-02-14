@@ -7,22 +7,28 @@ These are the used files that need to be uploaded to the es8266.
 
 <b>init.lua</b>
 	Runs automatically after boot
-getPass.lua
+	</b>
 	Read the ssid/passphrase from a file 'pass'
-getRunCount.lua
-	Keep an incremental count of runs (in a file 'runCount'). Useful for testing
-doWiFi.lua
-	Connects to the wifi access point
-readTemp.lua
+	
+<b>getRunCount.lua</b>
+	Keep an incremental count of runs (in a file 'runCount'). Useful for 
+	
+<b>doWiFi.lua</b>
+	Connects to the wifi access 
+	
+<b>readTemp.lua</b>
 	Read the temperature from the ds18b20
-doMQTT.lua
+	
+<b>doMQTT.lua</b>
 	Connects to MQTT and publishes
-ds18b20.lua
+	
+<b>ds18b20.lua</b>
 	The ds18b20 driver from nodemcu-firmware github
 
 
-compile.lua
+<b>compile.lua</b>
 	Run this to compile the above modules
-makePass.lua
+
+<b>makePass.lua</b>
 	Run this (after entering your details) to create the necessary 'pass' file
 
