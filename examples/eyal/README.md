@@ -1,3 +1,8 @@
+20150214-1431
+-------------
+
+An example that uses the below firmware.
+
 bin/20150213-2202-eyal
 ----------------------
 
