@@ -23,7 +23,7 @@ If you can compile programs you want to upload this too:
 <pre>
 	compile.lua
 </pre>
-You will also need to upload this module from the `nodemcu-firmware/lua_modules` github
+You will also need to upload this module from the `nodemcu/nodemcu-firmware/lua_modules` github
 <pre>
 	ds18b20.lua
 </pre>
