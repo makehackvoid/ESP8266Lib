@@ -1,3 +1,8 @@
+20150219-1226
+-------------
+
+A somewhat better organized version on the example below. All config done in one place.
+
 20150214-1431
 -------------
 
