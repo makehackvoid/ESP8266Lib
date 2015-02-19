@@ -3,7 +3,7 @@ This is an example of an application to read the temperature from a ds18b20 and 
 The app reports more than just the temperature as it is used as a test program. It can also print a progress log.
 
 This version keeps track of the run number (as it sleeps for 6 seconds between runs) by reading the old one back from the broker. You must, when running it for the first time, run it as
-<code>
+<pre>
 	resetRunCount = true ; dofile ("init.lua")
 </pre>
 
