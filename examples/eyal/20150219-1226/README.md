@@ -1,4 +1,5 @@
-This is an example of an application to read the temperature from a ds18b20 and submit to an MQTT broker.
+An example of an application to read the temperature from a ds18b20 and submit to an MQTT broker.
+------------
 
 The app reports more than just the temperature as it is used as a test program. It can also print a progress log.
 
@@ -18,7 +19,7 @@ Upload these programs:
 	doMQTT.lua
 	readTemp.lua
 </pre>
-If you can compile programs you want this:
+If you can compile programs you want to upload this too:
 <pre>
 	compile.lua
 </pre>
