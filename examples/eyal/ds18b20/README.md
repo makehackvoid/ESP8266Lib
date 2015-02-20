@@ -3,9 +3,9 @@ An example of reading temperature from a ds18b20 and submitting to MQTT
 
 The app reports more than just the temperature as it is used as a test program. It can also print a progress log. It has a few options that are only there for testing.
 
-This version keeps track of the run number (as it sleeps for 3 seconds between runs) by reading the old published data back from the broker. You must, when running it for the first time, run it as
+This version keeps track of the run number (as it sleeps for 3 seconds between runs) by reading the old published data back from the broker. You must, when running it for the first time, start it with
 <pre>
-	resetRunCount = true ; use_old_WiFi_setup = false ; dofile ("init.lua")
+	resetRunCount = true; use_old_WiFi_setup = false; dofile ("init.lua")
 </pre>
 
 First edit `init.lua` to reflect your setup. Instructions at the top section of that program.
