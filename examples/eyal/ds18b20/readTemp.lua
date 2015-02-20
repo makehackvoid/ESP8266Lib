@@ -1,14 +1,21 @@
 if nil ~= ds18b20_pin then
-	local t = require("ds18b20")
-	t.setup(ds18b20_pin)
+	log ("reading ds18b20");
+	local t = require ("ds18b20")
+	t.setup (ds18b20_pin)
 
+	time_read = tmr.now()
 	repeat
-		tmr.delay (10000)	-- 10ms
 		temp = t.read()
-	until temp ~= "85.0" and temp ~= 85
+		if temp ~= nil and temp ~= "85.0" and temp ~= 85 then
+			break
+		end
+		tmr.delay (750000)	-- 750ms
+	until false
+	time_read = (tmr.now() - time_read) / 1000000
 	t = nil;
 	package.loaded["ds18b20"] = nil;
-	collectgarbage();
+	ds18b20 = nil;
+	collectgarbage ();
 else
-	temp = runCount
+	temp = nil
 end

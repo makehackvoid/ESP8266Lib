@@ -1,29 +1,47 @@
-Publish ds18b20 readings to MQTT
---------------------------------
+An example of reading temperature from a ds18b20 and submitting to MQTT
+------------
 
-This is a test program, so it is not clean, with excessive prints etc.
+The app reports more than just the temperature as it is used as a test program. It can also print a progress log. It has a few options that are only there for testing.
 
-This program reads the ds18b20 and publishes it, then sleeps for 2 seconds.
+This version keeps track of the run number (as it sleeps for 3 seconds between runs) by reading the old published data back from the broker. You must, when running it for the first time, run it as
+<pre>
+	resetRunCount = true ; use_old_WiFi_setup = false ; dofile ("init.lua")
+</pre>
 
-After some memory shortage issues (when loading ds18b20.lua) the program was broken into pieces.
+First edit `init.lua` to reflect your setup. Instructions at the top section of that program.
 
-Also, it mostly runs outside the init.lua context, again to avoid said memory issues.
+Note: Do not reset the esp after the uploads, but go through the following steps before starting with a `dofile()`.
 
-Beyond reading the temperature (using a module from the nodemcu github) and publishing it to mqtt,
-there are a few other features to note:
+After flashing the firmware (in necessary), start the esp and upload these programs:
+<pre>
+	init.lua
+	doWiFi.lua
+	doMQTT.lua
+	readTemp.lua
+</pre>
+If you can compile programs you want to upload this too:
+<pre>
+	compile.lua
+</pre>
+You will also need to upload this module from the `nodemcu/nodemcu-firmware/lua_modules` github
+<pre>
+	ds18b20.lua
+</pre>
 
-- The ssid/passphrase are read from a file (see getPass.lua), so these are not in the code.
-  A short program (make-pass.lua) can be modified and run to create this file.
-
-- To allow stopping the program (which is in a loop) we check a GPIO pin and abort if requested.
-  This is done in init.lua.
-
-- Counting the runs is done in getRunCount.lua, which keeps the count in a file runCount.
-
-I usually start a run (after uploading the modules) with
-   file.remove ("runCount"); node.restart()
-
-The wakeup from dsleep did not work until recently. I use a firmware I built this morning (13/Feb) from the repository, which is available in another directory nearby.
-
-Note: this is still work in progress.
+- If you can compile programs then run
+<pre>
+	dofile ("compile.lua")
+</pre>
+- If you want to start counting runs from '1' (rather than continuing from the last run) or this is the very first time you run this, then set
+<pre>
+	 resetRunCount = true
+</pre>
+- If you do not have WiFi set up yet then set:
+<pre>
+	 use_old_WiFi_setup = false
+</pre>
+- Finally start the program with
+<pre>
+	dofile ("init.lua")
+</pre>
 

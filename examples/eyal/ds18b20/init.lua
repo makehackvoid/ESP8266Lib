@@ -1,24 +1,98 @@
-function realMain()
-	Server_IP_Address, Server_Port = "192.168.2.7", 1883;
+time_start = tmr.now() / 1000000;
 
-	gpio0 = 3;
-	gpio2 = 4;
-	gpio4 = 2;
-	gpio5 = 1;
+local gpio0 = 3;
+local gpio2 = 4;
+local gpio4 = 2;
+local gpio5 = 1;
 
-	ds18b20_pin = gpio4;	-- nil or gpio4
-	magic_pin   = gpio5;	-- LOW on this pin will disable the program
 
-	gpio.mode (magic_pin, gpio.INPUT);
-	if 0 == gpio.read (magic_pin) then
-		print ("aborting by magic");
-	else
-		dofile ("getRunCount.lua");
-		dofile ("readTemp.lua");
-		dofile ("main.lua");
+----------------------------------
+----- settings section start -----
+----------------------------------
 
-		print ("program end");
+-- your access point details
+ssid, passphrase = "ssid", "passphrase";
+
+-- your MQTT broker details
+Broker_Address, Broker_Port = "192.168.2.7", 1883;
+
+-- if you want to set up the WiFi then set
+--	use_old_WiFi_setup = false
+-- before starting a run with 'dofile("init.lua")'
+if nil == use_old_WiFi_setup then
+	use_old_WiFi_setup = true;	-- default: already have WiFi set up
+end
+
+-- if you want to start counting from 1 again then set
+--	resetRunCount = true
+-- before starting a run with 'dofile("init.lua")'
+if nil == resetRunCount then
+	resetRunCount = false;		-- default: continue counting
+end
+
+-- you can leave these two lines as is or change to your liking.
+MQTT_user, MQTT_timeout = "my-esp", 30;
+MQTT_topic = "testing/temp";
+
+-- how to execute lua programs?
+-- if they were compiled then use ".lc", otherwise use ".lua"
+lua_type = ".lc";
+
+-- what pin is the ds18b20 attached to?
+-- if disabled then use the run number as a fake reading
+ds18b20_pin = gpio4;		-- 'nil' to disable
+
+-- which is the magic pin?
+magic_pin   = gpio5;		-- 'nil' will disable the magic
+
+-- do we want 'log()' calls to actually print messages?
+print_log = false;		-- 'false' to disable printing of log messages
+
+-- do we want to enable WiFi, to allow publishing to the MQTT broker?
+do_wifi = true;			-- 'false' to disable WiFi access
+
+-- do we want to publish to the MQTT broker?
+do_MQTT = true;			-- 'false' to disable MQTT access
+
+-- how long we sleep between runs?
+sleep_time = 3*1000000;		--3 seconds
+
+--------------------------------
+----- settings section end -----
+--------------------------------
+
+function log (message, force)
+	if print_log or force then
+		print ((tmr.now()/1000000) .. ": " .. message);
 	end
 end
 
-tmr.alarm(1, 10, 0, realMain);
+function main()
+	log ("main start");
+
+	if nil ~= magic_pin then
+		gpio.mode (magic_pin, gpio.INPUT);
+		if 0 == gpio.read (magic_pin) then
+			print ("aborting by magic");
+			return
+		end
+	end
+
+	if nil == ds18b20_pin then
+		log ("not reading ds18b20");
+		temp = nil;
+	else
+		-- we do this very early to avoid "not enough memory" issues
+		dofile ("readTemp"..lua_type);
+	end
+
+	if do_wifi then
+		dofile ("doWiFi"..lua_type);
+	else
+		node.dsleep (sleep_time);
+	end
+
+	log ("main end");
+end
+
+main ()
