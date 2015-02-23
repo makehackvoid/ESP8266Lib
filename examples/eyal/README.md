@@ -13,8 +13,22 @@ bin/20150213-1100-eyal
 
 A build with all the latest fixes. So far looks more stable, running reboot.lua for almost 500 times (and going).
 
-reboot.lua
+reBoot.lua
 ----------
 
-A simple program that repeatedly reboots (5 seconds dsleep). Used to test the wakeup problem.
+A test program that repeatedly reboots (3 seconds dsleep). Used to test the wakeup problem.
 
+reCount.lua
+-----------
+
+A test program that repeatedly increments a counter in a file, then reboots (3 seconds dsleep). Used to test the wakeup problem.
+
+reRead.lua
+----------
+
+A test program that repeatedly reads the ds18b20, then reboots (3 seconds dsleep). Used to test the wakeup problem.
+
+reWiFi.lua
+----------
+
+A test program that waits for WiFi to acquire an IP, then reboots (3 seconds dsleep). Used to test the wakeup problem.
