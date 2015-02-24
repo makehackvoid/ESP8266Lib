@@ -38,6 +38,8 @@ local function log (message)
 	end
 end
 
+local test_count;
+
 local function testConnection()
 	test_count = test_count + 1;
 	if nil == wifi.sta.getip() then
@@ -63,8 +65,6 @@ local function main ()
 		end
 	end
 
-	local test_count = 0;
-
 	if nil == wifi.sta.getip() then
 		if use_old_WiFi_setup then
 			log ("using old WiFi setup");
@@ -79,6 +79,7 @@ local function main ()
 		wifi.sta.connect();
 	end
 
+	test_count = 0;
 	tmr.alarm(1, 100, 1, testConnection);	-- 0.1s
 
 	log ("main end");
