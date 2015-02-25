@@ -1,22 +1,17 @@
-ds3231
-------
+bin/
+----
 
-Basics manupulation of the i2c RTC module.
+Some firmwares that were built locally while waiting for the official ones.
 
-ds18b20
--------
+ds18b20/
+--------
 
 A example of a (I hope working) program that reads from a ds18b20 and publishes the reading to MQTT.
 
-bin/20150213-2202-eyal
-----------------------
+ds3231/
+-------
 
-This version includes node.compile().
-
-bin/20150213-1100-eyal
-----------------------
-
-A build with all the latest fixes. So far looks more stable, running reboot.lua for almost 500 times (and going).
+Basics manupulation of the i2c RTC module.
 
 reBoot.lua
 ----------
