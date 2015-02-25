@@ -1,3 +1,8 @@
+ds3231
+------
+
+Basics manupulation of the i2c RTC module.
+
 ds18b20
 -------
 
