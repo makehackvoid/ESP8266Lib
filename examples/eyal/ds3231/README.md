@@ -12,3 +12,5 @@ How to set the time
 
 Edit the example and uncomment the setTime() line. Set the date and time on this line to the near future then upload it.
 On the esp8266, at the command line, run `dofile("ds3231-example.lua")` when the time you selected arrives.
+
+It is best now to comment the line and upload it again. Otherwise, if you run the example again, you will reset the RTC to a past time.
