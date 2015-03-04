@@ -1,7 +1,9 @@
-m = mqtt.Client(MQTT_user, MQTT_timeout)	--  or add (...,..., "user", "password")
+time_MQTT = tmr.now()
+
+local m = mqtt.Client(MQTT_user, MQTT_timeout)	--  or add ', "user", "password")'
 
 m:on ("offline", function(conn)
-	log ("offline")
+	log ("offline, dsleep " .. sleep_time/1000000 .. "s")
 	node.dsleep(sleep_time)
 end)
 
@@ -13,9 +15,17 @@ local function doPublish ()
 		temp = runCount
 	end
 
-	local msg = string.format ("%4d times=%.6g,%.6g,%.6g vdd=%-5.3g %s",
-		runCount, time_start, time_read, tmr.now()/1000000,
-		node.readvdd33()/1000, temp)
+	time_MQTT = (tmr.now() - time_MQTT) / 1000000
+	local msg = string.format (
+		"%4d times=%.6g,%.6g,%.6g,%.6g,%.6g vdd=%-5.3g %s",
+		runCount,
+		time_start,
+		time_read,
+		time_WiFi,
+		time_MQTT,
+		tmr.now()/1000000,
+		node.readvdd33()/1000,
+		temp)
 
 	log ("publish '" .. msg .. "'")
 	m:publish (MQTT_topic, msg, 0, 1, function(conn)

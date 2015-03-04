@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- DS3231 I2C module for NODEMCU
+-- DS1307 I2C module for NODEMCU
 -- NODEMCU TEAM
 -- LICENCE: http://opensource.org/licenses/MIT
 -- Tobie Booth <tbooth@hindbra.in>
@@ -17,7 +17,7 @@ local tonumber = tonumber
 setfenv(1,M)
 
 local id = 0		-- always zero
-local dev_addr = 0x68	-- DS3231 i2c id
+local dev_addr = 0x68	-- DS1307 i2c id
 
 local function log (msg)
 	if false then print (msg) end
@@ -45,7 +45,7 @@ end
 
 function init(d, c)	-- io indexes: sda, scl
   if d == nil or c == nil or d < 0 or d > 12 or c < 0 or c > 12 or d == c then
-    log("ds3231 init failed: bad arguments")
+    log("ds1307 init failed: bad arguments")
     return nil
   else
     sda = d
@@ -53,11 +53,11 @@ function init(d, c)	-- io indexes: sda, scl
   end
 
   if not setup() then
-    log("ds3231 init failed: no device")
+    log("ds1307 init failed: no device")
     return nil
   end
 
-  log("ds3231 init OK")
+  log("ds1307 init OK")
 end
 
 -- return data or nil on failure
@@ -91,7 +91,7 @@ local function writeI2C (addr, data)
   return len
 end
 
--- get time from DS3231
+-- get time from DS1307
 function getTime()
   local data = readI2C (0x00, 7)
   if nil == data then return nil end
@@ -108,7 +108,7 @@ function getTime()
     bcdToDec(tonumber(string.byte(data, 7))) + 2000 + 100*int(month/128)
 end
 
--- set time for DS3231
+-- set time for DS1307
 function setTime(second, minute, hour, dow, day, month, year)
 -- validate arguments?
   if year >= 2000 then
@@ -132,11 +132,48 @@ function setTime(second, minute, hour, dow, day, month, year)
   return 8 == len
 end
 
-function getTemp()
-  local data = readI2C (0x11, 2)
+-- Should we protect the first 8 (time) locations?
+local lowest = 0	-- or 8?
+
+-- read string from registers
+function readStr(addr, len)
+  if addr < lowest or addr >= 64 or len <= 0 or addr+len > 64 then
+    return nil
+  end
+
+  return readI2C (addr, len)
+end
+
+-- write string to registers
+function writeStr(addr, data)
+  local len = strlen (data)
+  if addr < lowest or addr >= 64 or len <= 0 or addr+len > 64 then
+    return 0
+  end
+
+  return writeI2C (addr, data)
+end
+
+-- read one register
+function readReg(addr)
+  if addr < lowest or addr >= 64 then
+    return nil
+  end
+
+  local data = readI2C (addr, 1)
   if nil == data then return nil end
 
-  return tonumber(string.byte(data, 1)) + tonumber(string.byte(data, 2))/256
+  return tonumber(string.byte(data, 1))
+end
+
+-- write one register
+function writeReg(addr, data)
+  local d = int (data)
+  if addr < lowest or addr >= 64 or d < 0 or d >= 256 or d ~= data then
+    return 0
+  end
+
+  return writeI2C (addr, data)
 end
 
 return M

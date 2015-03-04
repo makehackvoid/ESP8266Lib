@@ -8,10 +8,10 @@ ds18b20/
 
 A example of a (I hope working) program that reads from a ds18b20 and publishes the reading to MQTT.
 
-ds3231/
+ds3231/, ds1307/, lm75
 -------
 
-Basics manupulation of the i2c RTC module.
+Basic manupulation of some i2c modules.
 
 reBoot.lua
 ----------

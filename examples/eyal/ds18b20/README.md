@@ -15,6 +15,7 @@ Note: Do not reset the esp after the uploads, but go through the following steps
 After flashing the firmware (in necessary), start the esp and upload these programs:
 <pre>
 	init.lua
+	main.lua
 	doWiFi.lua
 	doMQTT.lua
 	readTemp.lua
