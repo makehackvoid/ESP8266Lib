@@ -19,8 +19,11 @@ local second, minute, hour, dow, day, month, year = t.getTime ();
 print (string.format ("Date/Time %02d/%02d/%04d %02d:%02d:%02d",
 	day, month, year, hour, minute, second));
 
--- Get current temp
+-- Get temp
 print(string.format("Temp: %g", t.getTemp()));
+
+-- Get current temp
+print(string.format("Temp now: %g", t.getTempNow()));
 
 t = nil;
 package.loaded["ds3231"]=nil;

@@ -16,8 +16,20 @@ local print = print
 local tonumber = tonumber
 setfenv(1,M)
 
-local id = 0		-- always zero
-local dev_addr = 0x68	-- DS3231 i2c id
+local id = 0			-- always zero
+local dev_addr = 0x68		-- DS3231 i2c id
+
+local CALENDAR_REG = 0x00	-- to 0x06
+
+local CONROL_REG = 0x0E
+local CONTROL_CONV = 0x20
+
+local STATUS_REG = 0x0F
+local STATUS_BUSY = 0x04
+
+local AGING_REG = 0x10		-- not used yet
+
+local TEMP_REG = 0x11		-- and 0x12
 
 local function log (msg)
 	if false then print (msg) end
@@ -71,7 +83,10 @@ local function readI2C (addr, len)
   i2c.start(id)
   c = i2c.address(id, dev_addr, i2c.RECEIVER)
   local data = nil
-  if c then data = i2c.read(id, len) end
+  if c then
+	if nil == len then len = 1 end
+	data = i2c.read(id, len)
+  end
   i2c.stop(id)
 
   return data
@@ -93,18 +108,31 @@ end
 
 -- get time from DS3231
 function getTime()
-  local data = readI2C (0x00, 7)
+  local data = readI2C (CALENDAR_REG, 7)
   if nil == data then return nil end
+
+  local hour = string.byte(data, 3)
+  local hour_pm = hour >= 0x40
+  if hour_pm then		-- AM/PM used
+	if hour >= 0x60 then	-- it is PM
+		hour_pm = 12
+	else
+		hour_pm = 0	-- it is AM
+	end
+	hour = bit.band (hour, 0x1F)
+  else
+	hour_pm = 0
+  end
 
   local month = tonumber(string.byte(data, 6))
 
   return 
-    bcdToDec(tonumber(string.byte(data, 1))),
-    bcdToDec(tonumber(string.byte(data, 2))),
-    bcdToDec(tonumber(string.byte(data, 3))),
-    bcdToDec(tonumber(string.byte(data, 4))),
-    bcdToDec(tonumber(string.byte(data, 5))),
-    bcdToDec(bit.band (month, 0x1F)),
+    bcdToDec(tonumber(string.byte(data, 1))),	-- second
+    bcdToDec(tonumber(string.byte(data, 2))),	-- minute
+    bcdToDec(tonumber(hour)) + hour_pm,		-- hour
+    bcdToDec(tonumber(string.byte(data, 4))),	-- day of week
+    bcdToDec(tonumber(string.byte(data, 5))),	-- day
+    bcdToDec(bit.band (month, 0x1F)),		-- month
     bcdToDec(tonumber(string.byte(data, 7))) + 2000 + 100*int(month/128)
 end
 
@@ -119,11 +147,11 @@ function setTime(second, minute, hour, dow, day, month, year)
 	month = month + 80
   end
 
-  local len = writeI2C (0x00,
+  local len = writeI2C (CALENDAR_REG,
     string.char (
       decToBcd(second),
       decToBcd(minute),
-      decToBcd(hour),
+      decToBcd(hour),		-- always clear AM/PM flag
       decToBcd(dow),
       decToBcd(day),
       decToBcd(month),
@@ -132,11 +160,34 @@ function setTime(second, minute, hour, dow, day, month, year)
   return 8 == len
 end
 
+-- get the latest reading (done every 64 seconds)
 function getTemp()
-  local data = readI2C (0x11, 2)
-  if nil == data then return nil end
+	local data = readI2C (TEMP_REG, 2)
+	if nil == data then return nil end
 
-  return tonumber(string.byte(data, 1)) + tonumber(string.byte(data, 2))/256
+	local msb, lsb = string.byte(data, 1, 2)
+	local temp = msb + bit.rshift (lsb, 6)/4	-- unsigned 10-bit
+	if bit.band (msb, 0x80) ~= 0 then
+		temp = 256 - temp			-- 8-bit two's complement
+	end
+	return temp
+end
+
+local function isBusy()
+	local status = readI2C (STATUS_REG)
+	return bit.band (string.byte(status), STATUS_BUSY) == STATUS_BUSY
+end
+
+-- make a fresh reading
+function getTempNow()
+	if not isBusy() then
+		local control = readI2C (CONROL_REG)
+		writeI2C (CONROL_REG, bit.bor (string.byte(control), CONTROL_CONV))
+		repeat until isBusy()
+	end
+	repeat until not isBusy()
+
+	return getTemp()
 end
 
 return M
