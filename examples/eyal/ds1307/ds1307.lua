@@ -13,11 +13,22 @@ local bit = bit
 local string = string
 local i2c = i2c
 local print = print
-local tonumber = tonumber
 setfenv(1,M)
 
-local id = 0		-- always zero
-local dev_addr = 0x68	-- DS1307 i2c id
+local id = 0			-- always zero
+local dev_addr = 0x68		-- DS1307 i2c id
+
+local CALENDAR_REG = 0x00	-- to 0x06
+
+local CONROL_REG = 0x0E
+local CONTROL_CONV = 0x20
+
+local STATUS_REG = 0x0F
+local STATUS_BUSY = 0x04
+
+local AGING_REG = 0x10		-- not used yet
+
+local TEMP_REG = 0x11		-- and 0x12
 
 local function log (msg)
 	if false then print (msg) end
@@ -71,7 +82,10 @@ local function readI2C (addr, len)
   i2c.start(id)
   c = i2c.address(id, dev_addr, i2c.RECEIVER)
   local data = nil
-  if c then data = i2c.read(id, len) end
+  if c then
+	if nil == len then len = 1 end
+	data = i2c.read(id, len)
+  end
   i2c.stop(id)
 
   return data
@@ -93,19 +107,28 @@ end
 
 -- get time from DS1307
 function getTime()
-  local data = readI2C (0x00, 7)
+  local data = readI2C (CALENDAR_REG, 7)
   if nil == data then return nil end
 
-  local month = tonumber(string.byte(data, 6))
+  local hour = string.byte(data, 3)
+  local hour_pm = bit.band (hour, 0x60)
+  if hour_pm ~= 0 then		-- AM/PM mode
+	if hour_pm == 0x60 then	-- it is PM
+		hour_pm = 12
+	else
+		hour_pm = 0	-- it is AM
+	end
+	hour = bit.band (hour, 0x1F)
+  end
 
   return 
-    bcdToDec(tonumber(string.byte(data, 1))),
-    bcdToDec(tonumber(string.byte(data, 2))),
-    bcdToDec(tonumber(string.byte(data, 3))),
-    bcdToDec(tonumber(string.byte(data, 4))),
-    bcdToDec(tonumber(string.byte(data, 5))),
-    bcdToDec(bit.band (month, 0x1F)),
-    bcdToDec(tonumber(string.byte(data, 7))) + 2000 + 100*int(month/128)
+    bcdToDec(string.byte(data, 1)),	-- second
+    bcdToDec(string.byte(data, 2)),	-- minute
+    bcdToDec(hour) + hour_pm,		-- hour
+    bcdToDec(string.byte(data, 4)),	-- day of week
+    bcdToDec(string.byte(data, 5)),	-- day
+    bcdToDec(string.byte(data, 6)),	-- month
+    bcdToDec(string.byte(data, 7)) + 2000 -- year
 end
 
 -- set time for DS1307
@@ -114,16 +137,12 @@ function setTime(second, minute, hour, dow, day, month, year)
   if year >= 2000 then
 	year = year - 2000
   end
-  if year >= 100 then
-	year = year - 100
-	month = month + 80
-  end
 
-  local len = writeI2C (0x00,
+  local len = writeI2C (CALENDAR_REG,
     string.char (
       decToBcd(second),
       decToBcd(minute),
-      decToBcd(hour),
+      decToBcd(hour),		-- always clear AM/PM flag
       decToBcd(dow),
       decToBcd(day),
       decToBcd(month),
@@ -163,7 +182,7 @@ function readReg(addr)
   local data = readI2C (addr, 1)
   if nil == data then return nil end
 
-  return tonumber(string.byte(data, 1))
+  return string.byte(data, 1)
 end
 
 -- write one register

@@ -12,7 +12,7 @@ local gpio13 = 7;
 t.init(gpio2, gpio0);
 
 -- Set time: run ONCE and ON TIME:
--- t.setTime (0, 4, 14, 3, 4, 3, 2015);
+-- t.setTime (30, 55, 16, 5, 5, 3, 2015);
 
 -- Get current time
 local second, minute, hour, dow, day, month, year = t.getTime ();
@@ -21,10 +21,12 @@ print (string.format ("Date/Time %02d/%02d/%04d %02d:%02d:%02d",
 
 for addr = 8, 63 do
 	t.writeReg (addr, addr+10)
+	collectgarbage();
 end
 
 for addr = 8, 63 do
 	print ("reg[" .. addr .. "]=" .. t.readReg (addr))
+	collectgarbage();
 end
 
 t = nil;

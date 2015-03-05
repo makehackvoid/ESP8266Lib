@@ -112,28 +112,26 @@ function getTime()
   if nil == data then return nil end
 
   local hour = string.byte(data, 3)
-  local hour_pm = hour >= 0x40
-  if hour_pm then		-- AM/PM used
-	if hour >= 0x60 then	-- it is PM
+  local hour_pm = bit.band (hour,0x60)
+  if hour_pm ~= 0 then		-- AM/PM mode
+	if hour_pm == 0x60 then	-- it is PM
 		hour_pm = 12
 	else
 		hour_pm = 0	-- it is AM
 	end
 	hour = bit.band (hour, 0x1F)
-  else
-	hour_pm = 0
   end
 
-  local month = tonumber(string.byte(data, 6))
+  local month = string.byte(data, 6)
 
   return 
-    bcdToDec(tonumber(string.byte(data, 1))),	-- second
-    bcdToDec(tonumber(string.byte(data, 2))),	-- minute
-    bcdToDec(tonumber(hour)) + hour_pm,		-- hour
-    bcdToDec(tonumber(string.byte(data, 4))),	-- day of week
-    bcdToDec(tonumber(string.byte(data, 5))),	-- day
-    bcdToDec(bit.band (month, 0x1F)),		-- month
-    bcdToDec(tonumber(string.byte(data, 7))) + 2000 + 100*int(month/128)
+    bcdToDec(string.byte(data, 1)),	-- second
+    bcdToDec(string.byte(data, 2)),	-- minute
+    bcdToDec(hour) + hour_pm,		-- hour
+    bcdToDec(string.byte(data, 4)),	-- day of week
+    bcdToDec(string.byte(data, 5)),	-- day
+    bcdToDec(bit.band (month, 0x1F)),	-- month
+    bcdToDec(string.byte(data, 7)) + 2000 + 100*bit.rshift(month, 7)
 end
 
 -- set time for DS3231

@@ -12,7 +12,7 @@ local gpio13 = 7;
 t.init(gpio2, gpio0);
 
 -- Set time: run ONCE and ON TIME:
--- t.setTime(30, 56, 23, 3, 4, 3, 2015);
+-- t.setTime(0, 3, 17, 5, 5, 3, 2015);
 
 -- Get current time
 local second, minute, hour, dow, day, month, year = t.getTime ();
