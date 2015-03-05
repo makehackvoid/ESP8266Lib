@@ -13,6 +13,8 @@ How to set the time
 
 Edit `ds3231e.lua` and uncomment the `setTime()` line. Set the date and time on this line to the near future then upload it. The order of the fields is the same as on the following `getTime()` line.
 
+Naturally, you should have already changed the `init()` line to indicate the SDA and SCL pins you use and tested that reading the RTC works as expected.
+
 On the esp8266, at the command line, run `node.compile("ds3231.lua")`. Now you are ready to set the date and time.
 
 Wait for the time you selected to arrive and run `dofile("ds3231e.lua")`.
