@@ -113,13 +113,15 @@ function getTime()
 
   local hour = string.byte(data, 3)
   local hour_pm = bit.band (hour,0x60)
-  if hour_pm ~= 0 then		-- AM/PM mode
+  if hour_pm >= 0x40 then	-- AM/PM mode
 	if hour_pm == 0x60 then	-- it is PM
 		hour_pm = 12
 	else
 		hour_pm = 0	-- it is AM
 	end
 	hour = bit.band (hour, 0x1F)
+  else
+	hour_pm = 0
   end
 
   local month = string.byte(data, 6)
