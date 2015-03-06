@@ -1,4 +1,4 @@
-A collection of programs an modules to be used on the esp8266 with lua firmware.
+A collection of programs and modules for use on the esp8266 with lua firmware
 ======
 
 bin/
