@@ -1,3 +1,6 @@
+A collection of programs an modules to be used on the esp8266 with lua firmware.
+======
+
 bin/
 ----
 
