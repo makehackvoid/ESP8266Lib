@@ -5,7 +5,7 @@ The app reports more than just the temperature as it is used as a test program. 
 
 This version can keep track of the run number between runs by reading the old published data back from the broker. For this you must, when running it for the first time after flash+load, start it with
 <pre>
-	resetRunCount = true; use_old_WiFi_setup = false; dofile ("main.lua")
+	runCount = 1; use_old_WiFi_setup = false; dofile ("main.lua")
 </pre>
 It can slso store the run number on the ds3231 itself if you set.
 <pre>
@@ -27,7 +27,7 @@ After flashing the firmware (if necessary), start the esp and upload these progr
 	doMQTT.lua
 	doWiFi.lua
 </pre>
-If you can compile programs you want to upload this too:
+If you can compile programs (this is the default) you want to upload this too:
 <pre>
 	compile.lua
 </pre>
@@ -35,9 +35,9 @@ and run it:
 <pre>
 	dofile ("compile.lua")
 </pre>
-- If you want to start counting runs from '1' (rather than continuing from the last run) or this is the very first time you run this, then set
+- If you want to start counting runs from '1' (rather than continuing from the last run) or this is the very first time you run this, then set the desired value
 <pre>
-	 resetRunCount = true
+	 runCount = 1
 </pre>
 - If you do not have WiFi set up yet then set:
 <pre>
