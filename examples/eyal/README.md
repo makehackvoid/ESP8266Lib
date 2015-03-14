@@ -9,7 +9,7 @@ Some firmwares that were built locally while waiting for the official ones.
 mqtt/
 --------
 
-Examples of programs that reads the temperature and publish the reading to MQTT.
+Examples of programs that read the temperature and publish the reading to MQTT.
 
 ds3231/, ds1307/, lm75/, pca9555/, at24c32/
 -------
