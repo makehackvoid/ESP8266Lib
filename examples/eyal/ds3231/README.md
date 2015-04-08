@@ -8,6 +8,12 @@ This is a module for access to the DS3231 i2c RTC. It is mostly based on the mod
 - `getTemp()` was added to read the temperature. It is not a great feature as it has a +-3dC accuracy with a 0.25dC resolution. It is updated automatically every 64 seconds. `getTempNow()` forces a new conversion before reading it.
 - The example displays the date & time in a fixed format. It can also be used to set the RTC.
 
+./later
+-------
+
+A later version of the driver where i2c access was separated into another (i2clib) driver which
+can be shared by other i2c drivers.
+
 How to set the time
 -------------------
 
