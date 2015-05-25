@@ -9,8 +9,11 @@ This version keeps track of the run number (as it sleeps for 60 seconds between 
 </pre>
 and this will start with a run number of 1. Otherwise it will continue from the old run number.
 
+I have a new module built (app/modules/misc.c) which provides access to the esp RTC for keeping track of stats. You probably do not have it, in which case the `first.lua` program will fetch the last run number from the server.
+You will also not be able to track failures counts.
+
 First edit `main.lua` to reflect your setup. Instructions inside the program.
-Or you can set only a few things as the top of init.lua as you can see there in the 'if false' block.
+Or you can set only a few things as the top of `init.lua` as you can see there in the `if false` block.
 
 After flashing the firmware (if necessary), start the esp and upload these programs:
 <pre>
@@ -24,7 +27,7 @@ After flashing the firmware (if necessary), start the esp and upload these progr
 	send-tcp.lua
 	send-udp.lua
 </pre>
-I do not upload init.lua with the real name to avoid getting an unstoppable loop. However, the program should stop if you short gpio5 (the magic pin as configured in main.lua).
+I do not upload `init.lua` with the real name to avoid getting an unstoppable loop. However, the program should stop if you short `GPIO5` (the magic pin as configured in `main.lua`).
 If you can compile programs you want to upload this too:
 <pre>
 	compile.lua
@@ -44,7 +47,7 @@ It has been a while since I tested the ds3231 but you can try. Instead of the ds
 	node.compile("compile.lua")
 	dofile ("compile.lc")
 </pre>
-At this point it is best to node.restart() to get a clean slate.
+At this point it is best to `node.restart()` to get a clean slate.
 - If you want to start counting runs from '1' (rather than continuing from the last run) or this is the very first time you run this, then set
 <pre>
 	 runCount = 1
@@ -63,3 +66,6 @@ If it did what you want (check the server to see that you have a good reading) t
 </pre>
 Turn the module off (remove power), install it where you want it to stay, and power it up.
 If it does not report within a minute I recommend toggling the reset pin and checking if it works then. Otherwise you have an investigation on your hand...
+
+BTW, the server can provide some starts on all the active modules if you access it from your browser at `http://e7:11883/stats` (replace `e7` with your server hostnamee).
+
