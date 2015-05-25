@@ -54,6 +54,8 @@ At this point it is best to `node.restart()` to get a clean slate.
 <pre>
 	 use_old_WiFi_setup = false
 </pre>
+It should be said that the runCount is of no real value other than my tracking of the tests, so you can just ignore it.
+
 - now start the server. I run it on linux but it is strivial to run on windows too. `server.sh` looks at all the avilable log files and extract the latest recorded message for each, then starts the actual server `server.py`.
 
 You can start the server directly with `python server.py '/path/to/your/logs'`.
