@@ -22,7 +22,7 @@ Or you can set only a few things as the top of `init.lua` as you can see there i
 	funcs.lua
 	read-ds18b20.lua
 	ds18b20.lua
-	WiFi.lua
+	wifi.lua
 	first.lua
 	send-tcp.lua
 	send-udp.lua
