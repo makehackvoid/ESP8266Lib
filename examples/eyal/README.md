@@ -1,6 +1,12 @@
 A collection of programs and modules for use on the esp8266 with lua firmware
 ======
 
+app_v1/
+------
+
+An app where a ds18b20 temperature sensor is read and the result is sent to a network server.
+This is a test program, with more code than it necessary to simply accomplish this task.
+
 bin/
 ----
 
