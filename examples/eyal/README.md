@@ -5,7 +5,7 @@ app_v1/
 ------
 
 An app where a ds18b20 temperature sensor is read and the result is sent to a network server.
-This is a test program, with more code than it necessary to simply accomplish this task.
+This is a test program, with more code than is necessary to accomplish this task.
 
 bin/
 ----
