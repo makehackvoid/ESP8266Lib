@@ -1,6 +1,11 @@
 A collection of programs and modules for use on the esp8266 with lua firmware
 ======
 
+app_v2/
+------
+
+A later version of the application.
+
 app_v1/
 ------
 
