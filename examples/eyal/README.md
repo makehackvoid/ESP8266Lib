@@ -1,6 +1,11 @@
 A collection of programs and modules for use on the esp8266 with lua firmware
 ======
 
+misc/
+-----
+
+A place for me to put stuff.
+
 app_v2/
 ------
 
