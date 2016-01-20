@@ -6,6 +6,7 @@ Edit `make.sh` with your paths.
 Edit `user/user_main.c` with your setup (`SSID/PASS/SERVER`).
 
 Edit `lib/folder1/env.c` to add  your esp. Only the first 5 fields are used now. 'client' is the esp.
+
 Edit `include/user_config.h` and set `BUILD_DATE`
 
 Run
