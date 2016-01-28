@@ -1,0 +1,113 @@
+main.lua
+	wifi.sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
+	wifi.sta.status()
+
+wifi.lua
+	status = sta.status()
+	if 5 ~= status then
+		every 2ms: waitforConnection()
+	else
+		haveConnection()
+
+resetWiFi():	attempted once on connect failure, then abort
+	sta.disconnect()
+	sta.autoconnect(0)
+	sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
+	wifi.setmode(wifi.STATION)
+	sta.config(ssid, passphrase)
+	sta.connect()
+
+waitforConnection():
+		status = sta.status()
+		if 5 == status then
+			haveConnection()
+
+haveConnection():	do_file ("save")
+
+save.lua
+	msg = format_message()
+	conn = net.createConnection(net.UDP, 0)
+	conn:on("sent", ...
+	conn:connect
+	conn:send
+	tmr.alarm(1, 30, 0, doSleep)
+-----------------------------------------
+From	http://pastebin.com/n4kVWbrs
+Subject: UDP send, ESPCONN vs. LWIP
+
+ESPCONN:
+
+int ICACHE_FLASH_ATTR send_udp( uint8_t* server, int port, char* data, uint16 length )
+{ //sends udp packets
+  int result = -9999;
+  struct espconn *conn = (struct espconn *) os_zalloc(sizeof(struct espconn));
+  if (conn!=NULL) {
+    conn->type = ESPCONN_UDP;
+    conn->state = ESPCONN_NONE;
+    conn->proto.udp = (esp_udp*)os_zalloc(sizeof(esp_udp));
+    conn->proto.udp->local_port = espconn_port();
+    conn->proto.udp->remote_port = port;
+    os_memcpy(conn->proto.udp->remote_ip, server, 4);
+
+    result = espconn_create(conn);
+    if (result==0) {
+      result = espconn_sendto(conn, (uint8*) data, length);
+	  }
+	}
+	if (conn) {
+	  espconn_delete(conn);
+          os_free(conn->proto.udp);
+          os_free(conn);
+          conn = 0;
+	}
+  return result; //Success
+}
+
+LWIP:
+
+int ICACHE_FLASH_ATTR send_udp( uint8_t* server, int port, char* data, uint16 length )
+{ 
+  int result = -9999;
+
+  uint16_t local_port = 10;
+  uint16_t remote_port = port;
+
+  struct ip_addr pc_ipaddr;
+  IP4_ADDR(&pc_ipaddr,  &server[0], &server[1], &server[2], &server[3]);
+
+  struct udp_pcb *pcb = udp_new();
+  if(!pcb){ os_printf("Error creating PCB. Out of Memory\r\n"); return; }
+
+  err_t err;
+
+  os_printf("udp_bind...\r\n");
+  err = udp_bind(pcb, IP_ADDR_ANY, local_port);
+  if(err != ERR_OK){ os_printf("Unable to bind to port\r\n"); return; }
+
+  os_printf("p...\r\n");
+  struct pbuf *p;
+  p = pbuf_alloc(PBUF_TRANSPORT,length,PBUF_RAM); 
+  if (p == NULL) { os_printf("Could not allocate packet buffer.\r\n"); return;}
+
+  os_memcpy(p->payload, &data, length);
+
+  os_printf("udp_send...\r\n");
+  err = udp_sendto(pcb, p, &pc_ipaddr, remote_port); //udp_send(pcb,p->payload);
+  if (err == ERR_MEM) {
+    os_printf("Error sending packet. Out of memory\r\n");
+  } else if (err == ERR_RTE) {
+    os_printf("Could not find route to destinations address\r\n");
+  } else if (err != ERR_OK) {
+    os_printf("Error sending packet - %d\n\r", err);
+  } else {
+    os_printf("Packet sent\n\r");
+  }
+
+  os_printf("free...\r\n");
+  pbuf_free(p); //Free data
+  udp_remove(pcb); //Free lwIP udp connection
+
+  return result;
+}
+-----------------------------------------
+
