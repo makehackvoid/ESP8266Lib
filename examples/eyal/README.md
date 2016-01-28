@@ -6,6 +6,21 @@ misc/
 
 A place for me to put stuff.
 
+noos/
+-----
+
+A no-os SDK implementation of the same app.
+
+rtos/
+-----
+
+An RTOS SDK implementation of the same app. Had issues so it was abandoned :-(
+
+app_v3/
+------
+
+An even later version of the application.
+
 app_v2/
 ------
 
@@ -14,7 +29,7 @@ A later version of the application.
 app_v1/
 ------
 
-An app where a ds18b20 temperature sensor is read and the result is sent to a network server.
+A lua app where a ds18b20 temperature sensor is read and the result is sent to a network server.
 This is a test program, with more code than is necessary to accomplish this task.
 
 bin/
