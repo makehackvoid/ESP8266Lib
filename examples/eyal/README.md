@@ -16,6 +16,11 @@ rtos/
 
 An RTOS SDK implementation of the same app. Had issues so it was abandoned :-(
 
+app_v4/
+------
+
+A similar application written as an arduino sketch.
+
 app_v3/
 ------
 
