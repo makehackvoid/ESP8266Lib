@@ -41,14 +41,14 @@ static IPAddress          dns(192,168,2,7);
 #define WIFI_TIMEOUT_MS   (10*1000)
 
 static OneWire            ds(OW_PIN);
-static byte               addr[8] = {40, 24, 158, 118, 6, 0, 0, 129};	// DS18B20 ID
+static byte               addr[8] = {40, 24, 158, 118, 6, 0, 0, 129};   // DS18B20 ID
 
 static WiFiUDP            UDP;
 
 static unsigned long      time_start;
 static unsigned long      time_read;
 static unsigned long      time_wifi;
-static float              dCf;	// temperature in degrees Celsius
+static float              dCf;  // temperature in degrees Celsius
 
 
 static void
@@ -114,7 +114,7 @@ ds18b20_convert(void)
 }
 
 static boolean
-wait_for_wifi(void)
+set_up_wifi(void)
 {
   time_wifi = micros();
 
@@ -126,6 +126,12 @@ wait_for_wifi(void)
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 #endif
 
+  return true;
+}
+
+static boolean
+wait_for_wifi(void)
+{
   int i = WIFI_TIMEOUT_MS;
   byte wstatus;
   byte old_wstatus = 100;
@@ -224,7 +230,10 @@ do_stuff()
 {
   char message[100];
 
-  if (!read_temp())
+  if (!set_up_wifi())
+    return;
+
+  if (!read_temp()) // read while wifi comes up
     return;
 
   if (!wait_for_wifi())
