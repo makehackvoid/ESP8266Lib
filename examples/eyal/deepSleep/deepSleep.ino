@@ -8,6 +8,14 @@
 #define ONEWIRE_SEARCH    0
 #include <OneWire.h>
 
+extern "C" {
+  #include <user_interface.h>   // for RTC functions
+}
+
+#include "user_config.h"    // user config
+
+static OneWire            ds(OW_PIN);
+
 /* DS18x20 registers
  */
 #define CONVERT_T         0x44
@@ -18,37 +26,24 @@
 #define CHIP_DS18B20      0x10  // 16
 #define CHIP_DS18S20      0x28  // 40
 
-#define OW_PIN            4     // D2=GPIO4
-#define TIME_PIN          13    // D7=GPIO13
-
-#define SERIAL_BAUD       115200  // use 74880 to see the SDK messages
-//#define SERIAL_CHATTY
-
-#define WIFI_SSID         "esp"
-#define WIFI_PASSWORD     "esp8266wifi"
-
-#define WIFI_SERVER       "192.168.2.7"
-#define WIFI_PORT         21883
-
-//#define WIFI_USE_DHCP
-#define HOSTNAME          "d1-mini"
-static IPAddress          ip(192,168,2,51);  // static IP config
-static IPAddress          gw(192,168,2,7);
-static IPAddress          dns(192,168,2,7);
-
-#define SLEEP_MS          300     // DS18B20 needs 650ms to convert, sleep/wake takes 350ms
-#define WIFI_WAIT_MS      1
-#define WIFI_TIMEOUT_MS   (10*1000)
-
-static OneWire            ds(OW_PIN);
-static byte               addr[8] = {40, 24, 158, 118, 6, 0, 0, 129};   // DS18B20 ID
+static struct {
+  uint32_t magic;
+#define RTC_magic         0xd1dad1d1  // L
+  uint32_t runCount;      // count
+  uint32_t failSoft;      // count
+  uint32_t failHard;      // count
+  uint32_t failRead;      // count
+  uint32_t lastTime;      // us
+  uint32_t totalTime;     // ms
+} rtcMem;
 
 static WiFiUDP            UDP;
 
 static unsigned long      time_start;
 static unsigned long      time_read;
 static unsigned long      time_wifi;
-static float              dCf;  // temperature in degrees Celsius
+static unsigned long      time_udp_bug;
+static float              dCf;
 
 
 static void
@@ -91,7 +86,10 @@ toggle()
 static float
 ds18b20_read(void)
 {
-  if (!ds.reset()) return (85.0);
+  if (!ds.reset()) {
+    ++rtcMem.failRead;
+    return (85.0);
+  }
   ds.select(addr);
   ds.write(READ_SCRATCHPAD);
 
@@ -146,6 +144,7 @@ wait_for_wifi(void)
     delay(WIFI_WAIT_MS);
     if ((i -= WIFI_WAIT_MS) <= 0) {
       Serial.println(" no WiFi");
+      ++rtcMem.failHard;
       return false;
     }
   }
@@ -169,7 +168,7 @@ send_udp(char *message)
   UDP.beginPacket(WIFI_SERVER, WIFI_PORT);
   UDP.write(message);
   UDP.endPacket();
-  delay(50);  // work around SDK bug
+  time_udp_bug = millis() + UDP_DELAY_MS;
 
   return true;
 }
@@ -177,6 +176,12 @@ send_udp(char *message)
 static boolean
 format_message(char *buf, unsigned int bsize)
 {
+  char lasts[16];
+  show_frac (lasts, sizeof(lasts), 3, rtcMem.lastTime/1000);
+
+  char totals[16];
+  show_frac (totals, sizeof(totals), 3, rtcMem.totalTime);
+
   char starts[16];
   show_frac (starts, sizeof(starts), 3, time_start/1000);
 
@@ -194,8 +199,10 @@ format_message(char *buf, unsigned int bsize)
   show_frac (nows, sizeof(nows), 3, (time_now-time_start)/1000);
 
   snprintf (buf, bsize,
-      "show %s times=s%s,u0.000,r%s,w%s,t%s %s",
-      HOSTNAME, starts, reads, wifis, nows, dCs);
+      "show %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,t%s stats=fs%lu,fh%lu,fr%lu %s",
+      HOSTNAME, rtcMem.runCount, lasts, totals, starts, reads, wifis, nows,
+      rtcMem.failSoft, rtcMem.failHard, rtcMem.failRead,
+      dCs);
 
   return true;
 }
@@ -213,7 +220,7 @@ static boolean
 read_temp(void)
 {
   time_read = micros();
-  dCf = ds18b20_read(); // read old conversion
+  dCf = ds18b20_read();       // read old conversion
   ds18b20_convert();          // start next conversion
   time_read = micros()- time_read;
 
@@ -246,9 +253,58 @@ do_stuff()
     return;
 }
 
+/////////////////////////// RTC memory /////////////////
+static bool
+rtc_read(void)
+{
+  uint32_t mem;
+
+  system_rtc_mem_read (64, &rtcMem, sizeof(rtcMem));
+  return (mem);
+}
+
+static bool
+rtc_write(void)
+{
+  system_rtc_mem_write (64, &rtcMem, sizeof(rtcMem));
+}
+
+static bool
+rtc_init(void)
+{
+  rtc_read ();
+  if (RTC_magic != rtcMem.magic) {
+    rtcMem.magic     = RTC_magic;
+    rtcMem.runCount  = 0;
+    rtcMem.failSoft  = 0;
+    rtcMem.failHard  = 0;
+    rtcMem.failRead  = 0;
+    rtcMem.lastTime  = 0;
+    rtcMem.totalTime = 0;
+    rtc_write ();
+} else
+    rtc_read();
+
+  ++rtcMem.runCount;
+
+  return true;
+}
+
+static void
+rtc_commit(void)
+{
+  rtcMem.lastTime = micros();
+  rtcMem.totalTime += rtcMem.lastTime/1000;
+  rtc_write();
+}
+
+/////////////////////// main program /////////////////
+
 void
 setup() {
   time_start = micros();
+
+  rtc_init();
 
   /* after power up the pin is HIGH
    */
@@ -264,7 +320,7 @@ setup() {
   Serial.println("us");
 #endif
 
-  do_stuff();
+  do_stuff();   // put actual work there
 
   digitalWrite(TIME_PIN, HIGH);   // end marker
   delay(1);
@@ -280,6 +336,12 @@ setup() {
   Serial.print(time_now-time_start);
   Serial.println(")us");
 #endif
+
+  rtc_commit();
+
+  uint32_t now = millis();
+  if (now < time_udp_bug)
+    delay (time_udp_bug - now);
 
 // WAKE_RF_DEFAULT, WAKE_RFCAL, WAKE_NO_RFCAL, WAKE_RF_DISABLED
   ESP.deepSleep(SLEEP_MS*1000, WAKE_RFCAL);
