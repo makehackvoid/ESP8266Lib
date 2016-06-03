@@ -16,10 +16,10 @@ rtos/
 
 An RTOS SDK implementation of the same app. Had issues so it was abandoned :-(
 
-app_v4/
+deepSleep/
 ------
 
-A similar application written as an arduino sketch.
+A similar application written as an arduino sketch. I know that this is a bad name...
 
 app_v3/
 ------
