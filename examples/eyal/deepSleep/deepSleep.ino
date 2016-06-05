@@ -10,6 +10,7 @@
 
 extern "C" {
   #include <user_interface.h>   // for RTC functions
+//extern uint16_t readvdd33(void);  // system_get_vdd33() does not work...
 }
 
 #include "user_config.h"    // user config
@@ -39,11 +40,17 @@ static struct {
 
 static WiFiUDP            UDP;
 
-static unsigned long      time_start;
-static unsigned long      time_read;
-static unsigned long      time_wifi;
-static unsigned long      time_udp_bug;
-static float              dCf;
+static unsigned long      time_start;   // us
+static unsigned long      time_read;    // us
+static unsigned long      time_wifi;    // us
+static unsigned long      time_save;    // us
+
+static unsigned long      time_udp_bug; // ms
+
+ADC_MODE(ADC_VCC);
+static uint16_t           vdd;          // mv
+
+static float              dCf;          // degrees Celcius
 
 
 static void
@@ -176,41 +183,55 @@ send_udp(char *message)
 static boolean
 format_message(char *buf, unsigned int bsize)
 {
-  char lasts[16];
-  show_frac (lasts, sizeof(lasts), 3, rtcMem.lastTime/1000);
+  char s_last[16];
+  show_frac (s_last, sizeof(s_last), 3, rtcMem.lastTime/1000);
 
-  char totals[16];
-  show_frac (totals, sizeof(totals), 3, rtcMem.totalTime);
+  char s_total[16];
+  show_frac (s_total, sizeof(s_total), 3, rtcMem.totalTime);
 
-  char starts[16];
-  show_frac (starts, sizeof(starts), 3, time_start/1000);
+  char s_start[16];
+  show_frac (s_start, sizeof(s_start), 3, time_start/1000);
 
-  char reads[16];
-  show_frac (reads, sizeof(reads), 3, time_read/1000);
+  char s_read[16];
+  show_frac (s_read, sizeof(s_read), 3, time_read/1000);
 
-  char wifis[16];
-  show_frac (wifis, sizeof(wifis), 3, time_wifi/1000);
+  char s_wifi[16];
+  show_frac (s_wifi, sizeof(s_wifi), 3, time_wifi/1000);
 
-  char dCs[16];
-  show_frac (dCs, sizeof(dCs), 4, (long)(dCf*10000));
+  char s_dC[16];
+  show_frac (s_dC, sizeof(s_dC), 4, (long)(dCf*10000));
 
-  unsigned long time_now = micros();
-  char nows[16];
-  show_frac (nows, sizeof(nows), 3, (time_now-time_start)/1000);
+  char s_vdd[16];
+  show_frac (s_vdd, sizeof(s_vdd), 3, vdd);
+
+  time_save = micros() - time_save;
+  char s_save[16];
+  show_frac (s_save, sizeof(s_save), 3, time_save/1000);
+
+  unsigned long time_now = micros();  // do this last
+  char s_now[16];
+  show_frac (s_now, sizeof(s_now), 3, (time_now-time_start)/1000);
 
   snprintf (buf, bsize,
-      "show %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,t%s stats=fs%lu,fh%lu,fr%lu %s",
-      HOSTNAME, rtcMem.runCount, lasts, totals, starts, reads, wifis, nows,
+      "show %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,F0.000,S%s,d0.000,t%s stats=fs%lu,fh%lu,fr%lu adc=0.000 vdd=%s %s",
+      HOSTNAME, rtcMem.runCount, s_last, s_total, s_start, s_read, s_wifi, s_save, s_now,
       rtcMem.failSoft, rtcMem.failHard, rtcMem.failRead,
-      dCs);
+      s_vdd, s_dC);
 
   return true;
 }
 
 static boolean
-send_message(char *message)
+send_message(void)
 {
-  if (!send_udp(message))
+  char message[200];
+
+  time_save = micros();
+
+  if (!format_message(message, sizeof(message)))
+    return false;
+
+ if (!send_udp(message))
     return false;
 
   return true;
@@ -232,24 +253,31 @@ read_temp(void)
   return true;
 }
 
+static boolean
+read_vdd(void)
+{
+//vdd = readvdd33();
+  vdd = system_get_vdd33();
+
+  return true;
+}
+
 static void
 do_stuff()
 {
-  char message[100];
-
   if (!set_up_wifi())
     return;
 
   if (!read_temp()) // read while wifi comes up
     return;
 
+  if (!read_vdd()) // read while wifi comes up
+    return;
+
   if (!wait_for_wifi())
     return;
 
-  if (!format_message(message, sizeof(message)))
-    return;
-
-  if (!send_message(message))
+  if (!send_message())
     return;
 }
 
