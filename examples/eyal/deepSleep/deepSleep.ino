@@ -40,6 +40,7 @@ static struct {
 
 static WiFiUDP            UDP;
 
+static bool               woken_up = true;
 static unsigned long      time_start;   // us
 static unsigned long      time_read;    // us
 static unsigned long      time_wifi;    // us
@@ -124,11 +125,12 @@ set_up_wifi(void)
   time_wifi = micros();
 
 #ifndef WIFI_USE_DHCP
-    WiFi.config(ip, gw, dns);     // set static IP
+  WiFi.config(ip, gw, dns);     // set static IP
 #endif
 
 #ifdef WIFI_SSID
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  if (!woken_up)
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 #endif
 
   return true;
@@ -328,12 +330,17 @@ rtc_commit(void)
 
 /////////////////////// main program /////////////////
 
+#define WAKEUP_US         (uint32_t)(1000*WAKEUP_MS*TIME_RATE)
+#define DSLEEP_US         (uint32_t)(1000*DSLEEP_MS*TIME_RATE)
+#define SLEEP_US          (uint32_t)(1000*SLEEP_MS*TIME_RATE)
+
 void
 setup() {
   time_start = micros();
 
   rtc_init();
 
+if (woken_up) {
   /* after power up the pin is HIGH
    */
   pinMode(TIME_PIN, OUTPUT);
@@ -341,6 +348,7 @@ setup() {
 
   Serial.begin(SERIAL_BAUD);
   Serial.println("");
+}
 
 #ifdef SERIAL_CHATTY
   Serial.print("start at ");
@@ -355,7 +363,7 @@ setup() {
   digitalWrite(TIME_PIN, LOW);
 
 #ifdef SERIAL_CHATTY
-  unsigned long time_now = micros();
+  uint32_t time_now = micros();
   Serial.print("sleeping ");
   Serial.print(SLEEP_MS);
   Serial.print("ms at ");
@@ -371,12 +379,36 @@ setup() {
   if (now < time_udp_bug)
     delay (time_udp_bug - now);
 
+  uint32_t time_so_far = woken_up
+        ? (micros() + WAKEUP_US) : (micros() - time_start);
+//Serial.print("time_so_far=");
+//Serial.print(time_so_far);
+//Serial.println("us");
+
+  if (time_so_far+DSLEEP_US < SLEEP_US) { // sleeping
+//Serial.print("dsleep ");
+//Serial.print(SLEEP_US-(time_so_far+DSLEEP_US));
+//Serial.println("us");
 // WAKE_RF_DEFAULT, WAKE_RFCAL, WAKE_NO_RFCAL, WAKE_RF_DISABLED
-  ESP.deepSleep(SLEEP_MS*1000, WAKE_RFCAL);
+    ESP.deepSleep(SLEEP_US-(time_so_far+DSLEEP_US), WAKE_RFCAL);
+    return;
+  }
+
+  woken_up = false;
+
+  if (time_so_far < SLEEP_US) {
+//Serial.print("delay");
+//Serial.print((SLEEP_US-time_so_far)/1000);
+//Serial.println("ms");
+    delay((SLEEP_US-time_so_far)/1000);
+    return;
+  }
+  
+//Serial.println("continue");
+  // we missed the wakeup, start new cycle immediately
 }
 
 void
 loop() {
-  // sleeping so wont get here
+  setup();  // in case we only delayed
 }
-
