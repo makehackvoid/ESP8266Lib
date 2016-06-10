@@ -5,9 +5,15 @@
  */
 
 #define OW_PIN            4         // D2=GPIO4 one-wire data pin
-static byte               addr[8] = {40, 24, 158, 118, 6, 0, 0, 129}; // DS18b20 ID
+static byte               addr[][8] = {
+  {40, 197,  62, 118,   6,   0,   0,  60},
+  {40,  24, 158, 118,   6,   0,   0, 129}, // DS18b20 IDs
+  {40,  62,   6, 242,   6,   0,   0, 219},
+  {40,   4,  99, 242,   6,   0,   0,  58},
+  {40,  95, 190, 242,   6,   0,   0,  94},
+};
 
-#define TIME_PIN          13        // D7=GPIO13 output timing pin
+#define TIME_PIN          14        // D5=GPIO14 output timing pin
 
 #define SERIAL_BAUD       115200    // use 74880 to see the SDK messages
 //#define SERIAL_CHATTY
@@ -16,12 +22,12 @@ static byte               addr[8] = {40, 24, 158, 118, 6, 0, 0, 129}; // DS18b20
 #define WIFI_PASSWORD     "esp8266wifi"
 
 #define WIFI_SERVER       "192.168.2.7"
-//#define WIFI_SERVER       "192.168.173.1"  // on Windows
+//#define WIFI_SERVER       "192.168.173.1" // on Windows
 #define WIFI_PORT         21883
 
 //#define WIFI_USE_DHCP
-#define HOSTNAME          "d1-mini"
-static IPAddress          ip(192,168,2,51);  // static IP config
+#define HOSTNAME          "esp-12"
+static IPAddress          ip(192,168,2,35);  // static IP config
 static IPAddress          gw(192,168,2,7);
 static IPAddress          dns(192,168,2,7);
 

@@ -2,59 +2,26 @@
  * This sketch used to measure the Arduino performance on the esp8266.
  */
 
-#include <ESP8266WiFi.h>
+#include "deepSleep.h"
+
 #include <WiFiUDP.h>
-
-#define ONEWIRE_SEARCH    0
-#include <OneWire.h>
-
-extern "C" {
-  #include <user_interface.h>   // for RTC functions
-//extern uint16_t readvdd33(void);  // system_get_vdd33() does not work...
-}
-
-#include "user_config.h"    // user config
-
-static OneWire            ds(OW_PIN);
-
-/* DS18x20 registers
- */
-#define CONVERT_T         0x44
-#define COPY_SCRATCHPAD   0x48
-#define WRITE_SCRATCHPAD  0x4E
-#define RECALL_EEPROM     0xB8
-#define READ_SCRATCHPAD   0xBE
-#define CHIP_DS18B20      0x10  // 16
-#define CHIP_DS18S20      0x28  // 40
-
-static struct {
-  uint32_t magic;
-#define RTC_magic         0xd1dad1d1  // L
-  uint32_t runCount;      // count
-  uint32_t failSoft;      // count
-  uint32_t failHard;      // count
-  uint32_t failRead;      // count
-  uint32_t lastTime;      // us
-  uint32_t totalTime;     // ms
-} rtcMem;
 
 static WiFiUDP            UDP;
 
 static bool               woken_up = true;
-static unsigned long      time_start;   // us
-static unsigned long      time_read;    // us
-static unsigned long      time_wifi;    // us
-static unsigned long      time_save;    // us
+static uint32_t           time_start;   // us
+static uint32_t           time_wifi;    // us
+static uint32_t           time_save;    // us
 
-static unsigned long      time_udp_bug; // ms
+static uint32_t           time_udp_bug; // ms
 
 ADC_MODE(ADC_VCC);
 static uint16_t           vdd;          // mv
 
-static float              dCf;          // degrees Celcius
+static float              temp[rangeof(addr)]; // degrees Celcius
 
 
-static void
+static int
 show_frac(char *buf, int bsize, byte precision, long v)
 {
   long scale = 1;
@@ -70,15 +37,14 @@ show_frac(char *buf, int bsize, byte precision, long v)
     break;
   case 0:
   default:
-    snprintf (buf, bsize, "%lu", v);
-    return;
+    return snprintf (buf, bsize, "%lu", v);
   }
   long int u = v/scale;
   long int f = v -u*scale;
   char  fmt[16];
   sprintf (fmt, "%%ld.%%0%dld", precision);
  
-  snprintf (buf, bsize, fmt, u, f);
+  return snprintf (buf, bsize, fmt, u, f);
 }
 
 /* first invocation will raise the pin
@@ -91,35 +57,7 @@ toggle()
   digitalWrite(TIME_PIN, (level = ~level) ? HIGH : LOW);
 }
 
-static float
-ds18b20_read(void)
-{
-  if (!ds.reset()) {
-    ++rtcMem.failRead;
-    return (85.0);
-  }
-  ds.select(addr);
-  ds.write(READ_SCRATCHPAD);
-
-  byte i, data[9];
-  for (i = 0; i < 9; ++i)
-    data[i] = ds.read();
-
-  // if (OneWire::crc8(data, 9)) ERROR...
-
-  int16_t dCi = (data[1] << 8) | data[0];  // 12 bit temp
-  return ((float)dCi / 16.0);
-}
-
-static void
-ds18b20_convert(void)
-{
-  if (!ds.reset()) return;
-  ds.select(addr);
-  ds.write(CONVERT_T, 1);
-}
-
-static boolean
+static bool
 set_up_wifi(void)
 {
   time_wifi = micros();
@@ -136,7 +74,7 @@ set_up_wifi(void)
   return true;
 }
 
-static boolean
+static bool
 wait_for_wifi(void)
 {
   int i = WIFI_TIMEOUT_MS;
@@ -171,7 +109,7 @@ wait_for_wifi(void)
   return true;
 }
 
-static boolean
+static bool
 send_udp(char *message)
 {
   UDP.beginPacket(WIFI_SERVER, WIFI_PORT);
@@ -182,7 +120,7 @@ send_udp(char *message)
   return true;
 }
 
-static boolean
+static bool
 format_message(char *buf, unsigned int bsize)
 {
   char s_last[16];
@@ -200,8 +138,12 @@ format_message(char *buf, unsigned int bsize)
   char s_wifi[16];
   show_frac (s_wifi, sizeof(s_wifi), 3, time_wifi/1000);
 
-  char s_dC[16];
-  show_frac (s_dC, sizeof(s_dC), 4, (long)(dCf*10000));
+  char s_temp[10*rangeof(temp)];
+  char *p = s_temp;
+  for (int i = 0; i < rangeof(temp); ++i) {
+    if (i > 0) *p++ = ',';
+    p += show_frac (p, 9, 4, (long)(temp[i]*10000));
+  }
 
   char s_vdd[16];
   show_frac (s_vdd, sizeof(s_vdd), 3, vdd);
@@ -210,7 +152,7 @@ format_message(char *buf, unsigned int bsize)
   char s_save[16];
   show_frac (s_save, sizeof(s_save), 3, time_save/1000);
 
-  unsigned long time_now = micros();  // do this last
+  uint32_t time_now = micros();  // do this last
   char s_now[16];
   show_frac (s_now, sizeof(s_now), 3, (time_now-time_start)/1000);
 
@@ -218,12 +160,12 @@ format_message(char *buf, unsigned int bsize)
       "show %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,F0.000,S%s,d0.000,t%s stats=fs%lu,fh%lu,fr%lu adc=0.000 vdd=%s %s",
       HOSTNAME, rtcMem.runCount, s_last, s_total, s_start, s_read, s_wifi, s_save, s_now,
       rtcMem.failSoft, rtcMem.failHard, rtcMem.failRead,
-      s_vdd, s_dC);
+      s_vdd, s_temp);
 
   return true;
 }
 
-static boolean
+static bool
 send_message(void)
 {
   char message[200];
@@ -239,23 +181,7 @@ send_message(void)
   return true;
 }
 
-static boolean
-read_temp(void)
-{
-  time_read = micros();
-  dCf = ds18b20_read();       // read old conversion
-  ds18b20_convert();          // start next conversion
-  time_read = micros()- time_read;
-
-#ifdef SERIAL_CHATTY
-  Serial.print("\nTemperature = ");
-  Serial.print(dCf);
-  Serial.println("dC");
-#endif
-  return true;
-}
-
-static boolean
+static bool
 read_vdd(void)
 {
 //vdd = readvdd33();
@@ -270,7 +196,7 @@ do_stuff()
   if (!set_up_wifi())
     return;
 
-  if (!read_temp()) // read while wifi comes up
+  if (!read_temp(rangeof(addr), addr, temp)) // read while wifi comes up
     return;
 
   if (!read_vdd()) // read while wifi comes up
@@ -283,52 +209,6 @@ do_stuff()
     return;
 }
 
-/////////////////////////// RTC memory /////////////////
-static bool
-rtc_read(void)
-{
-  uint32_t mem;
-
-  system_rtc_mem_read (64, &rtcMem, sizeof(rtcMem));
-  return (mem);
-}
-
-static bool
-rtc_write(void)
-{
-  system_rtc_mem_write (64, &rtcMem, sizeof(rtcMem));
-}
-
-static bool
-rtc_init(void)
-{
-  rtc_read ();
-  if (RTC_magic != rtcMem.magic) {
-    rtcMem.magic     = RTC_magic;
-    rtcMem.runCount  = 0;
-    rtcMem.failSoft  = 0;
-    rtcMem.failHard  = 0;
-    rtcMem.failRead  = 0;
-    rtcMem.lastTime  = 0;
-    rtcMem.totalTime = 0;
-    rtc_write ();
-} else
-    rtc_read();
-
-  ++rtcMem.runCount;
-
-  return true;
-}
-
-static void
-rtc_commit(void)
-{
-  rtcMem.lastTime = micros();
-  rtcMem.totalTime += rtcMem.lastTime/1000;
-  rtc_write();
-}
-
-/////////////////////// main program /////////////////
 
 #define WAKEUP_US         (uint32_t)(1000*WAKEUP_MS*TIME_RATE)
 #define DSLEEP_US         (uint32_t)(1000*DSLEEP_MS*TIME_RATE)
@@ -381,14 +261,8 @@ if (woken_up) {
 
   uint32_t time_so_far = woken_up
         ? (micros() + WAKEUP_US) : (micros() - time_start);
-//Serial.print("time_so_far=");
-//Serial.print(time_so_far);
-//Serial.println("us");
 
   if (time_so_far+DSLEEP_US < SLEEP_US) { // sleeping
-//Serial.print("dsleep ");
-//Serial.print(SLEEP_US-(time_so_far+DSLEEP_US));
-//Serial.println("us");
 // WAKE_RF_DEFAULT, WAKE_RFCAL, WAKE_NO_RFCAL, WAKE_RF_DISABLED
     ESP.deepSleep(SLEEP_US-(time_so_far+DSLEEP_US), WAKE_RFCAL);
     return;
@@ -397,14 +271,10 @@ if (woken_up) {
   woken_up = false;
 
   if (time_so_far < SLEEP_US) {
-//Serial.print("delay");
-//Serial.print((SLEEP_US-time_so_far)/1000);
-//Serial.println("ms");
     delay((SLEEP_US-time_so_far)/1000);
     return;
   }
   
-//Serial.println("continue");
   // we missed the wakeup, start new cycle immediately
 }
 
@@ -412,3 +282,4 @@ void
 loop() {
   setup();  // in case we only delayed
 }
+
