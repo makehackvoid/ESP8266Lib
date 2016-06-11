@@ -62,13 +62,39 @@ set_up_wifi(void)
 {
   time_wifi = micros();
 
-#ifndef WIFI_USE_DHCP
-  WiFi.config(ip, gw, dns);     // set static IP
+#ifdef SERIAL_CHATTY
+Serial.print("before set_up_wifi ssid='");
+Serial.print(WiFi.SSID());
+Serial.print("', lip=");
+Serial.print(WiFi.localIP());
+Serial.print(", ip=");
+Serial.println(ip);
 #endif
 
 #ifdef WIFI_SSID
-  if (!woken_up)
+  if (WiFi.SSID() != WIFI_SSID) {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+//    if (!WiFi.getAutoConnect()) {
+//Serial.println("WiFi.setAutoConnect");
+//      WiFi.setAutoConnect(true);
+//    }
+  }
+#endif
+
+#ifndef WIFI_USE_DHCP
+  if (WiFi.localIP() != ip)
+    WiFi.config(ip, gw, dns);     // set static IP
+  if (WiFi.hostname() != HOSTNAME)
+    WiFi.hostname(HOSTNAME);
+#endif
+
+#ifdef SERIAL_CHATTY
+Serial.print("after set_up_wifi ssid='");
+Serial.print(WiFi.SSID());
+Serial.print("', lip=");
+Serial.print(WiFi.localIP());
+Serial.print(", ip=");
+Serial.println(ip);
 #endif
 
   return true;
