@@ -19,7 +19,7 @@ ADC_MODE(ADC_VCC);
 static uint16_t           vdd;          // mv
 
 static float              temp[rangeof(addr)]; // degrees Celcius
-
+static bool               wifing = false;
 
 static int
 show_frac(char *buf, int bsize, byte precision, long v)
@@ -39,15 +39,23 @@ show_frac(char *buf, int bsize, byte precision, long v)
   default:
     return snprintf (buf, bsize, "%lu", v);
   }
+  char  fmt[16];
+  sprintf (fmt, "%%s%%ld.%%0%dld", precision);
+
+  char *sign;
+  if (v < 0) {
+    sign = "-";
+    v = -v;
+  } else
+    sign = "";
+
   long int u = v/scale;
   long int f = v -u*scale;
-  char  fmt[16];
-  sprintf (fmt, "%%ld.%%0%dld", precision);
  
-  return snprintf (buf, bsize, fmt, u, f);
+  return snprintf (buf, bsize, fmt, sign, u, f);
 }
 
-/* first invocation will raise the pin
+/* first invocation will set the pin HIGH
  */
 static void
 toggle()
@@ -123,7 +131,9 @@ wait_for_wifi(void)
   }
   time_wifi = micros() - time_wifi;
   digitalWrite(TIME_PIN, LOW);
-  Serial.println(wstatus);
+  Serial.print(wstatus);
+  Serial.print(" time_wifi=");
+  Serial.println(time_wifi);
 
 #ifdef SERIAL_CHATTY
   Serial.print(" have WiFi in ");
@@ -164,10 +174,10 @@ format_message(char *buf, unsigned int bsize)
   char s_wifi[16];
   show_frac (s_wifi, sizeof(s_wifi), 3, time_wifi/1000);
 
-  char s_temp[10*rangeof(temp)];
+  char s_temp[1+10*rangeof(temp)] = ""; // 1=room for empty string
   char *p = s_temp;
   for (int i = 0; i < rangeof(temp); ++i) {
-    if (i > 0) *p++ = ',';
+    *p++ = i > 0 ? ',' : ' ';
     p += show_frac (p, 9, 4, (long)(temp[i]*10000));
   }
 
@@ -183,8 +193,8 @@ format_message(char *buf, unsigned int bsize)
   show_frac (s_now, sizeof(s_now), 3, (time_now-time_start)/1000);
 
   snprintf (buf, bsize,
-      "show %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,F0.000,S%s,d0.000,t%s stats=fs%lu,fh%lu,fr%lu adc=0.000 vdd=%s %s",
-      HOSTNAME, rtcMem.runCount, s_last, s_total, s_start, s_read, s_wifi, s_save, s_now,
+      "%s %s %lu times=L%s,T%s,s%s,u0.000,r%s,w%s,F0.000,S%s,d0.000,t%s stats=fs%lu,fh%lu,fr%lu adc=0.000 vdd=%s%s",
+      WIFI_OP, HOSTNAME, rtcMem.runCount, s_last, s_total, s_start, s_read, s_wifi, s_save, s_now,
       rtcMem.failSoft, rtcMem.failHard, rtcMem.failRead,
       s_vdd, s_temp);
 
@@ -201,8 +211,11 @@ send_message(void)
   if (!format_message(message, sizeof(message)))
     return false;
 
- if (!send_udp(message))
-    return false;
+  if (wifing) {
+    if (!send_udp(message))
+      return false;
+  } else
+    Serial.println(message);
 
   return true;
 }
@@ -216,45 +229,53 @@ read_vdd(void)
   return true;
 }
 
-static void
+static bool
 do_stuff()
 {
-  if (!set_up_wifi())
-    return;
+  if (wifing && !set_up_wifi())
+    return false;
 
   if (!read_temp(rangeof(addr), addr, temp)) // read while wifi comes up
-    return;
+    return false;
 
   if (!read_vdd()) // read while wifi comes up
-    return;
+    return false;
 
-  if (!wait_for_wifi())
-    return;
+  if (wifing && !wait_for_wifi())
+    return false;
 
   if (!send_message())
-    return;
+    return false;
+
+  return true;
 }
 
+static bool
+do_nothing()
+{
+  if (wifing) {
+    if (!set_up_wifi())
+      return false;
+    if (!wait_for_wifi())
+      return false;
+  }
+
+  return true;
+}
 
 #define WAKEUP_US         (uint32_t)(1000*WAKEUP_MS*TIME_RATE)
 #define DSLEEP_US         (uint32_t)(1000*DSLEEP_MS*TIME_RATE)
 #define SLEEP_US          (uint32_t)(1000*SLEEP_MS*TIME_RATE)
 
-void
-setup() {
-  time_start = micros();
+static void
+cycle(void)
+{
+  ++rtcMem.runCount;
+  wifing = (rtcMem.wakeType != WAKE_RF_DISABLED);
 
-  rtc_init();
-
-if (woken_up) {
-  /* after power up the pin is HIGH
-   */
-  pinMode(TIME_PIN, OUTPUT);
-  digitalWrite(TIME_PIN, LOW);    // start marker
-
-  Serial.begin(SERIAL_BAUD);
-  Serial.println("");
-}
+  Serial.print("### cycle, wifing=");
+  Serial.println(wifing);
+  show_state();
 
 #ifdef SERIAL_CHATTY
   Serial.print("start at ");
@@ -262,7 +283,11 @@ if (woken_up) {
   Serial.println("us");
 #endif
 
-  do_stuff();   // put actual work there
+#ifdef DO_NOTHING
+  bool did_ok = do_nothing();
+#else
+  bool did_ok = do_stuff();   // put actual work there
+#endif
 
   digitalWrite(TIME_PIN, HIGH);   // end marker
   delay(1);
@@ -279,8 +304,6 @@ if (woken_up) {
   Serial.println(")us");
 #endif
 
-  rtc_commit();
-
   uint32_t now = millis();
   if (now < time_udp_bug)
     delay (time_udp_bug - now);
@@ -288,24 +311,63 @@ if (woken_up) {
   uint32_t time_so_far = woken_up
         ? (micros() + WAKEUP_US) : (micros() - time_start);
 
-  if (time_so_far+DSLEEP_US < SLEEP_US) { // sleeping
-// WAKE_RF_DEFAULT, WAKE_RFCAL, WAKE_NO_RFCAL, WAKE_RF_DISABLED
-    ESP.deepSleep(SLEEP_US-(time_so_far+DSLEEP_US), WAKE_RFCAL);
-    return;
+  Serial.print("time_so_far+DS=");
+  Serial.println(time_so_far+DSLEEP_US);
+
+  uint32_t last_wake_type = rtcMem.wakeType;
+  rtcMem.wakeType = (rtcMem.runCount%WIFI_ON_RATE) ? WAKE_RF_DISABLED : WAKE_RFCAL;  // WiFi every 3 cycles
+  rtc_commit();
+
+  if (time_so_far+DSLEEP_US < SLEEP_US) {
+    Serial.println("### normal dsleep");
+    ESP.deepSleep(SLEEP_US-(time_so_far+DSLEEP_US), rtcMem.wakeType);
   }
 
-  woken_up = false;
+  if (last_wake_type != rtcMem.wakeType) {
+    Serial.println("### mode change dsleep");
+    ESP.deepSleep(1, rtcMem.wakeType);  // must change mode now
+  }
 
-  if (time_so_far < SLEEP_US) {
+  if (time_so_far < SLEEP_US)
     delay((SLEEP_US-time_so_far)/1000);
-    return;
+
+  Serial.println("### no dsleep");
+}
+
+void
+setup() {
+  time_start = micros();
+
+  /* after power up the pin is HIGH
+   */
+  pinMode(TIME_PIN, OUTPUT);
+  digitalWrite(TIME_PIN, LOW);    // start marker
+
+  Serial.begin(SERIAL_BAUD);
+  Serial.println("");
+
+  pinMode(MAGIC_PIN, INPUT_PULLUP);
+  if (LOW == digitalRead(MAGIC_PIN)) {
+    Serial.println("Stopped by magic");
+    ESP.deepSleep(0xFFFFFFFFUL, WAKE_RF_DISABLED); // about 80 minutes
   }
-  
-  // we missed the wakeup, start new cycle immediately
+
+  Serial.println("### setup");
+
+  if (!rtc_init()) {  // first time
+    Serial.println("### first run dsleep");
+    show_state();
+    ESP.deepSleep(1, rtcMem.wakeType);
+  }
 }
 
 void
 loop() {
-  setup();  // in case we only delayed
+  if (!woken_up)
+    time_start = micros();
+
+  cycle();
+
+  woken_up = false;
 }
 
