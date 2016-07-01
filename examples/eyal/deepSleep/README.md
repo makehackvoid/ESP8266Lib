@@ -7,3 +7,4 @@ It is actually a minimal program and needs some extra work before it is identica
 
 There are some constants to set in `user_config.h`. You will need the ESP8266WiFi library.
 
+It is worth mentioning that for one-wire to work you need a pullup resistor on the data pin.
