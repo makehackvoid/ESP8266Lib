@@ -1,7 +1,11 @@
 #include "deepSleep.h"
 
+/*
+ * Change this value when you change the structure of 'struct rtcMem'
+ */
   #define RTC_magic         0xd1dad1d1  // L
 //#define RTC_magic         0xdad1d1da  // X
+
 struct rtcMem rtcMem;
 
 static bool

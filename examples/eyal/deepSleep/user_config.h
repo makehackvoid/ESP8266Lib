@@ -6,11 +6,7 @@
 
 #define OW_PIN            4         // D2=GPIO4 one-wire data pin
 static byte               addr[][8] = {
-  {40, 197,  62, 118,   6,   0,   0,  60}, // DS18b20 IDs
-  {40,  24, 158, 118,   6,   0,   0, 129},
-  {40,  62,   6, 242,   6,   0,   0, 219},
-  {40,   4,  99, 242,   6,   0,   0,  58},
-  {40,  95, 190, 242,   6,   0,   0,  94},
+  {40,  95, 190, 242,   6,   0,   0,  94}, // DS18b20 IDs
 };
 
 #define MAGIC_PIN          5        // D1=GPIO5  magic pin
@@ -32,17 +28,43 @@ static IPAddress          ip(192,168,2,52);  // static IP config
 static IPAddress          gw(192,168,2,7);
 static IPAddress          dns(192,168,2,7);
 
-#define UDP_DELAY_MS      10        // work around SDK UDP bug
-#define WAKEUP_MS         60        // unaccounted wakeup time [measured]
-#define DSLEEP_MS         110       // time to enter dsleep [measured]
-#define TIME_RATE         (60/58.8) // RTC/WallClock for this host [measured]
+/*
+ * The following three are wall clock ms
+ */
 
-#define SLEEP_MS          (60*1000) // time between wakeups
+/*
+ * Without WiFi the program reports  78ms at the start, but the DSO shows 136ms.
+ * With    WiFi the program reports 245ms at the start, but the DSO shows 300ms.
+ */
+#define WAKEUP_MS         55        // unaccounted wakeup time [measured]
+
+/*
+ * On the DSO we see sleep starting 104ms after program end.
+ */
+#define DSLEEP_MS         104       // time to enter dsleep [measured]
+
+#define SLEEP_MS          10000     // time between wakeups [wall clock]
+
+/*
+ * RTC/WallClock ratio for this host [measured]
+ */
+#define TIME_SPEED        1.0175    // esp-12c, 60s cycle
+
+/*
+ * The following _MS are in RTC units
+ */
+
+#define UDP_DELAY_MS      10        // work around SDK UDP bug
 #define WIFI_WAIT_MS      1         // how often to check wifi when waiting
 #define WIFI_TIMEOUT_MS   (10*1000) // how long to wait before giving up
-#define WIFI_ON_RATE      3         // WiFi on every n cycles, 1=always
+#define WIFI_ON_RATE      6         // WiFi on every n cycles, 1=always, 0=never
 
 //#define                   DO_NOTHING
+
+#define SEND_TIMES                  // include "times=" in message
+#define SEND_STATS                  // include "stats=" in message
+#define SEND_ADC                    // include "adc=" in message
+//#define PRINT_MESSAGE               // print message on console
 
 #define WIFI_OP           "store"   // or "show"
 

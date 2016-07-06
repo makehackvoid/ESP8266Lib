@@ -3,7 +3,7 @@
 void
 show_state(void)
 {
-  return;
+  return;     // disabled
 
   static char *resetReason_s[] = {
     "REASON_DEFAULT_RST",

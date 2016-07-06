@@ -16,6 +16,9 @@ extern bool read_temp(int n, byte addr[][8], float temp[]);
 extern uint32_t time_read;    // us
 extern void show_state(void);
 
+/*
+ * Change the value of RTC_magic in rtc.cpp when you change this structure
+ */
 struct rtcMem {
   uint32_t magic;
   RFMode   wakeType;
