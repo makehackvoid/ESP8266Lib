@@ -2,40 +2,50 @@ function Log (...) mLog ("read", unpack(arg)) end
 local tmr = tmr
 done_file (tmr.now())
 used ()
+out_bleep()
 
 local tries_ps = 500			-- tries per second (2ms period)
-local tries_count = 0
 local tries_limit = 1.5*tries_ps	-- 1.5s
+local tries_count = tries_limit		-- no retries. set to 0 to retry
+local t = nil
+
+local function do_next()
+	if do_WiFi then do_file ("wifi") end
+end
 
 local function haveReadings(nTemps)
-	time_read = tmr.now() - time_read
-	t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
-	if print_log and temp then
-		local tCs = ""
-		local tSep = ""
-		for n = 1,nTemps do
-			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
-			tSep = ","
-		end
-		Log ("have Reading %s after %d tries",
-			tCs, tries_count)
+	if time_read > 0 then
+		time_read = tmr.now() - time_read
 	end
-	read_ds18b20, waitforReading = nil, nil
-	if do_WiFi then do_file ("wifi") end
+	if nTemps > 0 then
+		t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
+--		ds3231, package.loaded["ds3231"] = nil, nil
+		if print_log and temp then
+			local tCs = ""
+			local tSep = ""
+			for n = 1,nTemps do
+				tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
+				tSep = ","
+			end
+			Log ("have Reading %s after %d tries",
+				tCs, tries_count)
+		end
+		read_ds18b20, waitforReading_ds18b20 = nil, nil
+--		read_ds3231 = nil
+	end
+	do_next()
 end
 
 local function failedReadings(nTemps)
 	incrementCounter(rtca_failRead)
-	for n = 1,#ow_addr do
+	for n = 1,nTemps do
 		if not temp[n] then temp[n] = 85.0 end
 	end
-	haveReadings(#ow_addr)
+	haveReadings(nTemps)
 	return
 end
 
-local t = nil
-
-local function waitforReading()
+local function waitforReading_ds18b20()
 	tries_count = tries_count + 1
 	local done = true
 	for n = 1,#ow_addr do
@@ -59,14 +69,6 @@ local function waitforReading()
 		end
 		return true
 	end
---[[
-	if tries_count >= tries_limit then
-		tmr.stop(1)
-		Log ("Reading failed, aborting")
-		incrementCounter(rtca_failRead)
-		doSleep()
-	end
---]]
 	return false
 end
 
@@ -75,18 +77,29 @@ local function read_ds18b20 ()
 	start_dofile = tmr.now()
 	t = require ("ds18b20")
 	done_file (tmr.now())
+	out_bleep()
 
 	time_read = tmr.now()
 	if not t.setup (ow_pin) then
 		Log ("no ow on pin %d", ow_pin)
-		failedReadings(#ow_addr)
+		failedReadings("" ~= ow_addr[1] and #ow_addr or 0)
 --		abort = true
 		return
 	end
 
-	if not waitforReading() then
+	if "" == ow_addr[1] then
+		ow_addr = t.addrs()
+		Log ("detected %d devices", #ow_addr)
+		if 0 == #ow_addr then
+			time_read = 0
+			do_next()
+			return
+		end
+	end
+
+	if not waitforReading_ds18b20() then
 		Log ("waiting for Reading")
-		tmr.alarm(1, 1000/tries_ps, 1, waitforReading)
+		tmr.alarm(1, 1000/tries_ps, 1, waitforReading_ds18b20)
 	end
 end
 
@@ -110,14 +123,19 @@ end
 end--]]
 
 if not abort then
-	temp = {nil}
-	if read_device == "ds18b20" then
-		if ow_pin >= 0 then
-			read_ds18b20()
-		else
+	temp = {}
+	time_read = 0
+	if not read_device then
+		do_next()
+	elseif read_device == "ds18b20" then
+		if ow_pin < 0 then
 			Log ("no ow pin, not reading ds18b20")
-			time_read = 0
-			haveReadings(#temp)
+			do_next()	-- haveReadings(#temp)
+		elseif #ow_addr < 1 then
+			Log ("no ow listed")
+			do_next()	-- haveReadings(#temp)
+		else
+			read_ds18b20()
 		end
 --[[	elseif read_device == "ds3231" then
 		if i2c_SDA >= 0 and i2c_SCL >= 0 then
@@ -125,8 +143,7 @@ if not abort then
 			read_ds3231 = nil
 		else
 			Log ("no i2c pins, not reading ds3231")
-			time_read = 0
-			haveReadings(#temp)
+			do_next()	-- haveReadings(#temp)
 		end
 	else
 		do_file("read-"..read_device)

@@ -25,7 +25,8 @@
 #	EL Now loading initial record count
 # 10 May 15 EL Add sleep in idle loop
 #  6 Jun 15 EL Add options. Add --port=
-# 12 Aep 15 EL Call setsockopt() after bind()
+# 12 Sep 15 EL Call setsockopt() after bind()
+#  2 Jun 16 EL Fix 'show' for new device
 #
 # to do:
 # - locking required to protect global stats
@@ -203,6 +204,10 @@ def show(context, now, data, words, addr):
 	del words[0]	# remove 'show'
 	device = words[0]
 	del words[0]	# remove device
+
+	if device not in lastDate:
+		ok (context, "new device '"+device+"'")
+		messageCount[device] = 0
 
 	lastData[device] = data
 	lastDate[device] = now.strftime("%Y%m%d%H%M%S")

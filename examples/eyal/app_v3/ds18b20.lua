@@ -143,7 +143,6 @@ function read(addr, unit)
 
 --	get last reading
 	local data = get_scratchpad(addr)
-	if (nil == data) then return nil end
 
 --	start next conversion
 	ow.reset(pin)
@@ -151,6 +150,7 @@ function read(addr, unit)
 	ow.write(pin, 0x44, 1)	-- CONVERT T
 --	if not done_conversion() then return nil end
 
+	if (nil == data) then return nil end
 	local t = data:byte(1) + data:byte(2) * 256
 	if (t > 32767) then
 		t = t - 65536

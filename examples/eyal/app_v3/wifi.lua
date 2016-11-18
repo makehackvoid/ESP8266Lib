@@ -1,10 +1,12 @@
 function Log (...) mLog ("wifi", unpack(arg)) end
 local tmr = tmr
+local out_toggle = out_toggle
 local sta = wifi.sta
 time_wifi = done_file (tmr.now())
 used ()
+out_bleep()
 
-local check_rate = 500			-- checks per second (2ms period)
+local check_rate = 1000			-- checks per second (1ms period)
 local soft_limit = wifi_soft_limit*check_rate
 local hard_limit = wifi_hard_limit*check_rate
 
@@ -15,12 +17,13 @@ local function resetWiFi ()
 	Log ("resetWIFI")
 	sta.disconnect()
 	if clientIP then
-		sta.autoconnect(0)
+--		sta.autoconnect(0)
 		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
 	end
 	wifi.setmode(wifi.STATION)
-	sta.config(ssid, passphrase)
-	sta.connect()
+	sta.config(ssid, passphrase, 1)
+--	sta.autoconnect(1)
+--	sta.connect()
 end
 
 local function haveConnection()
@@ -46,6 +49,7 @@ local function waitforConnection()
 		wifi_status = new_status
 	end
 	if 5 ~= new_status then
+		out_toggle()
 		if 0 == check_count % check_rate then	-- announce once a second
 			Log ("WiFi unavailable after %d seconds, status=%d",
 				check_count/check_rate, wifi_status)
@@ -62,6 +66,7 @@ local function waitforConnection()
 			end
 		end
 	else
+		out_set(gpio.LOW)
 		tmr.stop(1)
 		haveConnection()
 	end

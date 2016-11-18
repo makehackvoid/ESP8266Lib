@@ -6,5 +6,5 @@ dir="`realpath "$dir"`"
 logdir='/data/tellerstats'
 
 port='21883'
-log="$logdir/iot-server-$port.log" path='/data2/tmp/tellerstats' \
+log="$logdir/iot-server-$port.log" path='/data2/tellerstats' \
 	"$dir/iot-server.sh" --port=$port

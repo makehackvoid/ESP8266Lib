@@ -51,39 +51,98 @@ function do_file(fname, fg)
 	end
 end
 
-function restart(time_left)
-	if have_rtc_mem then
-		local time_total = rtcmem.read32(
-					rtca_totalTime)
-		local time_now = tmr.now()			-- us
-		rtcmem.write32(rtca_lastTime,
-			time_now)
-		time_total = time_total + time_now / 1000	-- ms
-		rtcmem.write32(rtca_totalTime,
-			time_total)
+local out_state = gpio.LOW	-- was set LOW at start
+
+function out_set(state)
+	if out_pin and out_state ~= state then
+		out_state = state
+		gpio.write(out_pin, out_state)
 	end
+end
+
+function out_bleep()
+	if out_pin then
+		gpio.write(out_pin, gpio.HIGH)
+		gpio.write(out_pin, gpio.LOW)	-- generates a 200us bleep
+		out_state = gpio.LOW
+	end
+end
+
+function out_toggle()
+	if out_pin then
+		out_state = (gpio.LOW + gpio.HIGH) - out_state	-- may work...
+		gpio.write(out_pin, out_state)
+	end
+end
+
+function restart_really(time_left)
+--[[
+	WAKE_RF_DEFAULT  = 0 -- CAL or not after wake up, depends on init data byte 108.
+	WAKE_RFCAL       = 1 -- CAL        after wake up, there will be large current.
+	WAKE_NO_RFCAL    = 2 -- no CAL     after wake up, there will only be small current.
+	WAKE_RF_DISABLED = 4 -- disable RF after wake up, there will be the smallest current.
+--]]
 
 	if nil ~= time_left and time_left > 0 then
-		node.dsleep (time_left, 1)	-- RC_CAL after
+		local rf_mode = 1
+		if rfcal_rate then
+			local runCount = runCount or 1
+			rf_mode = (runCount % rfcal_rate > 0) and 2 or 1
+		end
+		Log("runCount=%d rf_mode=%d", runCount, rf_mode)
+		if nil ~= rtctime then
+			out_bleep()
+--			rtctime.dsleep_aligned ((sleep_time+dsleep_delay)*rtc_rate, 0, rf_mode)
+			rtctime.dsleep (time_left, rf_mode)
+		else
+			node.dsleep (time_left, rf_mode)
+		end
 	else
 		node.restart()
 	end
 end
 
+function restart(time_left)
+	if have_rtc_mem then
+		local time_total = rtcmem.read32(rtca_totalTime)
+		local time_now = tmr.now() + (wakeup_delay+dsleep_delay)*rtc_rate	-- us
+		rtcmem.write32(rtca_lastTime, time_now)
+		rtcmem.write32(rtca_totalTime, time_total + time_now/1000)		-- ms
+	end
+
+--	if wifi.sta.status() > 0 then
+--		wifi.sta.disconnect()
+--	end
+
+	local t_delay = 0
+	if grace_time then
+		local t_grace = tmr.now()
+		if t_grace < grace_time then
+			t_delay = (grace_time - t_grace)/1000
+			time_left = time_left - t_delay*1000
+		end
+	end
+
+	tmr.alarm(3, t_delay, 0, function()
+		restart_really(time_left)
+	end)
+
+end
+
 function doSleep ()
-	local time_left = 0
-	local sleep_time = sleep_time*sleep_rate
-	local sleep_start = tmr.now()+sleep_tmr_delay
-	if sleep_time > 0 then
-		time_left = sleep_time - sleep_start
-		if time_left <= 0 then
-			Log("restart now\n")
-			restart ()
-		else
+	local sleep_start = tmr.now() + wakeup_delay*rtc_rate
+	local time_left
+	local sleep_time = sleep_time*rtc_rate	-- time each cycle
+	if sleep_time > 0 then				-- dsleep requested
+		time_left = sleep_time - (sleep_start + dsleep_delay*rtc_rate)
+		if time_left > 0 then
 			Log("dsleep %gs\n", time_left/1000000)
 			restart (time_left)
+			return
 		end
-	elseif sleep_time < 0 then
+		Log("restart now\n")
+		restart ()
+	elseif sleep_time < 0 then			-- wait requested
 		time_left = (-sleep_time - sleep_start) / 1000
 		if time_left <= 0 then
 			Log("restart now\n")
@@ -109,3 +168,4 @@ function incrementCounter(address)
 	rtcmem.write32(address, count)
 	return count
 end
+

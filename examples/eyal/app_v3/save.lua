@@ -2,6 +2,7 @@ function Log (...) mLog ("save", unpack(arg)) end
 local tmr = tmr
 local time_Save = done_file (tmr.now())
 used ()
+out_bleep()
 
 local function format_message()
 	local failSoft, failHard, failRead, timeLast, timeTotal
@@ -29,6 +30,11 @@ local function format_message()
 			time_Save / 1000000,
 			time_dofile / 1000000,
 			(tmr.now() - time_start) / 1000000)
+		if nil ~= rtc_start_s then
+			times = ("%s,R%d.%06d"):format(
+				times,
+				rtc_start_s, rtc_start_u)
+		end
 	end
 
 	local stats = ""
@@ -47,41 +53,41 @@ local function format_message()
 		end
 	end
 
-if true then
-	vbat = adc.read(0)
-	if true then
-		if node.readvdd33 then
-			vdd33 = node.readvdd33()	-- new way
-		else
-			vdd33 = adc.readvdd33()		-- old way
-		end
-		if not vdd33 then
-			vdd33 = 3300			-- dummy
-		end
-	else
-		vdd33 = 3300				-- dummy
+	local radio = ""
+	if send_radio then
+		radio = (" radio=s%d"):format(
+			-wifi.sta.getrssi())
 	end
-end
 
+	if adc_factor then	-- no vdd with adc anymore
+		vbat = adc.read(0)*adc_factor
+		vdd33 = 3300			-- dummy
+	else
+		vbat = 0			-- dummy
+		vdd33 = adc.readvdd33()*vdd_factor
+	end
+
+	local noTemp = 0			-- or 85?
 	local tCs
-	if 0 == #ow_addr then
-		tCs = "0.00000"
+	if 0 == #temp then
+		tCs = ("%.4f"):format(noTemp)
 	else
 		tCs = ""
 		local tSep = ""
-		for n = 1,#ow_addr do
-			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
+		for n = 1,#temp do
+			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or noTemp))
 			tSep = ","
 		end
 	end
 
-	return ("store %s %3d%s%s adc=%.3f vdd=%.3f %s"):format(
+	return ("store %s %3d%s%s%s adc=%.3f vdd=%.3f %s"):format(
 		clientID,
 		runCount,
 		times,
 		stats,
-		(vbat*adc_factor) / 1000,
-		(vdd33*vdd_factor) / 1000,
+		radio,
+		vbat / 1000,
+		vdd33 / 1000,
 		tCs)
 end
 
@@ -101,16 +107,12 @@ elseif "udp" == save_proto then
 	local conn = net.createConnection(net.UDP, 0)
 
 	conn:on("sent", function(conn)
+		grace_time = tmr.now() + udp_grace_ms*1000
 		Log ("sent")
 		msg = nil
 
--- UDP needs a grace period
-		tmr.alarm(1, udp_grace_ms, 0, doSleep)
---		function()
---			tmr.stop(1)
---			conn:close()
---			doSleep()
---		end)
+		conn:close()
+		doSleep()
 	end)
 
 	Log("connecting to %s:%d", saveServer, savePort)
@@ -118,7 +120,7 @@ elseif "udp" == save_proto then
 
 	Log ("send '%s'", msg)
 	conn:send (msg)
---[[else
+--[[else	-- tcp
 	local conn = net.createConnection(net.TCP, 0)
 
 	conn:on("disconnection", function(conn)

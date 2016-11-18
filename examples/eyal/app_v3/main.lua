@@ -1,6 +1,10 @@
 function Log (...) mLog ("main", unpack(arg)) end
 time_setup = done_file (tmr.now())
 used ()
+out_bleep()
+
+local sta = wifi.sta
+local rtcmem = rtcmem
 
 local function main()
 -- how to execute lua programs?
@@ -8,7 +12,7 @@ local function main()
 	lua_type = lua_type or ".lc"
 
 	if nil == clientID then
-		local mac = string.gsub(string.upper(wifi.sta.getmac()),":","-")
+		local mac = string.gsub(string.upper(sta.getmac()),":","-")
 		if not pcall (function() do_file("esp-" .. mac, true) end) then
 			print ("missing setup file, using default")
 			if not pcall (function() do_file("esp-test", true) end) then
@@ -21,12 +25,29 @@ local function main()
 	end
 
 -- some defaults
-	sleep_rate = sleep_rate or 1.0			-- tmr/time
+	rtc_rate = rtc_rate or 1.0			-- tmr/time
 	sleep_time = sleep_time or 60			-- seconds
 	sleep_time = sleep_time * 1000000		-- tmr
-	sleep_tmr_delay = sleep_tmr_delay or 190000	-- tmr to dsleep
-	adc_factor = adc_factor or 11			-- for 1m+10m ohms
-	vdd_factor = vdd_factor or 1
+
+	if nil ~= rtctime then
+		wakeup_delay = wakeup_delay or   1300	-- 1.3ms to enter with rtctime.dsleep
+	else
+		wakeup_delay = wakeup_delay or 105000	-- time to enter with node.dsleep
+	end
+	dsleep_delay = dsleep_delay or  70000	-- 70ms unaccounted wakeup time
+
+-- need to restart if setting a new adc mode
+	local adc_mode
+	if adc_factor then
+		adc_mode = adc.INIT_ADC
+		vdd_factor = nil	-- cannot do both
+	else
+		adc_mode = adc.INIT_VDD33
+		vdd_factor = vdd_factor or 1
+	end
+	if adc.force_init_mode(adc_mode) then
+		node.restart()
+	end
 
 -- do we want to actually print messages?
 	if nil == print_stats  then print_stats  = false end
@@ -52,9 +73,20 @@ local function main()
 	if nil == do_WiFi then do_WiFi = true end
 	if not do_WiFi then do_Save = false end
 
+-- select items included in the reported message
+	if nil == send_times then send_times = true end
+	if nil == send_stats then send_stats = true end
+	if nil == send_radio then send_radio = true end
+end
+
+if not abort then main() end
+main = nil
+
+local function wifi_setup()
 -- your access point details
 	if nil == ssid then
-		ssid, passphrase = "SSID", "PASSPHRASE"
+		-- leave bssid as nil unless you really need it
+		ssid, passphrase, bssid = "SSID", "PASSPHRASE", "B0-48-7A-C2-B8-CC"
 	end
 
 -- if you want to set up new WiFi then set
@@ -64,9 +96,9 @@ local function main()
 
 -- settings for SDK 1.4.0 with FLASH_512K
 -- how many seconds to wait for automatic IP
-	wifi_soft_limit = wifi_soft_limit or 1.0	-- hot  connect, average under 0.07
+	wifi_soft_limit = wifi_soft_limit or 5	-- hot  connect, average under 0.07
 -- how many seconds to wait for IP after reset 
-	wifi_hard_limit = wifi_hard_limit or 5.0	-- cold connect, average under 2.2
+	wifi_hard_limit = wifi_hard_limit or 10	-- cold connect, average under 2.2
 
 -- do we want to publish the reading?
 	if nil == do_Save then do_Save = true end
@@ -75,39 +107,49 @@ local function main()
 	savePort   = savePort   or 11883
 	netMask    = netMask    or "255.255.255.0"
 
-	if do_WiFi then	-- speeds up WiFi?
-		if not wifi.sta.getip() then
-			wifi.sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
-			Log ("static IP set to %s", clientIP)
-		end
-		wifi.sta.status()
-	end
-
 -- what protocol to use to send the reading?
 	save_proto = save_proto or "udp"	-- "udp" or "tcp"
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
 	udp_grace_ms = udp_grace_ms or 30
 
--- select items included in the saved message
-	if nil == send_times then send_times = true end
-	if nil == send_stats then send_stats = true end
+-- how often to do WiFi RFCAL
+	rfcal_rate = rfcal_rate or 10
+
+-- we want to set this up asap (to stop dhcpc)
+	local ip = sta.getip()
+	if not ip or ip ~= clientIP then
+		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
+		Log ("static IP set to %s", clientIP)
+		local cssid = sta.getconfig()
+		if not cssid or cssid ~= ssid then
+			sta.config(ssid, passphrase, 1, bssid)
+			Log ("AP set to %s", ssid)
+		end
+	end
+	sta.status()
 end
 
-if not abort then main() end
-main = nil
+if not abort and do_WiFi then wifi_setup() end
+wifi_setup = nil
 
 time_setup = tmr.now() - time_setup
 
 -- address in RTC of counters and value of magic
 -- standard lua is missing the rtcmem functions
 local function setup_rtcmem()
+	if nil ~= rtctime then
+		if 0 == rtctime.get() then	-- was never set
+			rtctime.set(0,0)
+		end
+	end
+
 	have_rtc_mem = nil ~= rtcmem
 	if not have_rtc_mem then
 		newRun = true	-- always fetch runCount from server
 		return
 	end
-	rtc_magic = rtc_magic or 0x6adad0da
-	rtca_magic     = rtca_magic     or 127	-- last slot
+	rtc_magic      = rtc_magic      or 0x6adad0da
+	rtca_magic     = rtca_magic     or 127		-- last slot
 	rtca_runCount  = rtca_runCount  or (rtca_magic - 1)
 	rtca_failSoft  = rtca_failSoft  or (rtca_magic - 2)
 	rtca_failHard  = rtca_failHard  or (rtca_magic - 3)
