@@ -1,3 +1,5 @@
+-- a test program to see how long it takes for a wifi connection to be established
+
 local savePort, saveServer = 21883, "192.168.2.7"
 local udp_grace_ms = 1
 
