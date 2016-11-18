@@ -1,3 +1,5 @@
+-- Display some stats of the module, including the list of attached one-wire modules
+
 local gpio4 = 2
 local function show_addr()
 	local t = require ("ds18b20")
