@@ -1,6 +1,8 @@
 An example of reading temperature from a ds18b20 and submitting to a server
 ------------
 
+It can also read the `bme280` and more.
+
 This application reports more than just the temperature as it is used as a test program. It can also print a progress log. It has a few options that are only there for testing.
 
 I will repeat: it does much work that is not required in the deployed version.
@@ -32,8 +34,7 @@ I run two servers, one production `iot-server1.sh` and the other for testing `io
 It should be simple to adapt these scripts to windows...
 
 Notes:
-- This runs with nodemcu-firmware dev branch, using SDK 1.5.1. I also replaced in `app/modules/adc.c`
-	system_get_vdd33 -> readvdd33
+- This runs with nodemcu-firmware dev branch, using SDK 1.5.4.1.
 - I did not test the ds3231 for a long while, so beware.
 - I know that this note is terse but this is work in progress as I deal with all the issues I encounter.
 - The app is broken into parts to make it fit in memory, and allow the files to be compiled. If running on a small memory module (e.g. esp-01 or esp-07) then the compile may fail is you have `init.lua`, so remove it an upload it later.
