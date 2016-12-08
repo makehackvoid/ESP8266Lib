@@ -34,11 +34,11 @@ function getTemp()
 	if nil == d then return nil end
 
 	local msb, lsb = string.byte(d, 1, 2)
-	local temp = msb + (lsb-lsb%64)/256
+	local Temp = msb + (lsb-lsb%64)/256
 	if msb >= 0x080 then
-		temp = 256 - temp			-- 8-bit two's complement
+		Temp = 256 - Temp			-- 8-bit two's complement
 	end
-	return temp
+	return Temp
 end
 
 local function isBusy()

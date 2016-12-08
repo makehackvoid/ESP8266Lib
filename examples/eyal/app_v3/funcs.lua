@@ -108,7 +108,10 @@ function restart(time_left)
 		local time_now = tmr.now() + (wakeup_delay+dsleep_delay)*rtc_rate	-- us
 		rtcmem.write32(rtca_lastTime, time_now)
 		rtcmem.write32(rtca_totalTime, time_total + time_now/1000)		-- ms
+		rtcmem.write32(rtca_timeLeft, (time_left or 0))
 	end
+
+	if nil == time_left then return end
 
 --	if wifi.sta.status() > 0 then
 --		wifi.sta.disconnect()
@@ -132,31 +135,32 @@ end
 function doSleep ()
 	local sleep_start = tmr.now() + wakeup_delay*rtc_rate
 	local time_left
-	local sleep_time = sleep_time*rtc_rate	-- time each cycle
+	local sleep_time = sleep_time*rtc_rate		-- us time each cycle
 	if sleep_time > 0 then				-- dsleep requested
 		time_left = sleep_time - (sleep_start + dsleep_delay*rtc_rate)
 		if time_left > 0 then
 			Log("dsleep %gs\n", time_left/1000000)
 			restart (time_left)
-			return
+		else
+			Log("restart now\n")
+			restart (0)
 		end
-		Log("restart now\n")
-		restart ()
 	elseif sleep_time < 0 then			-- wait requested
 		time_left = (-sleep_time - sleep_start) / 1000
 		if time_left <= 0 then
 			Log("restart now\n")
-			restart ()
+			restart (0)
+		else
+			Log("restart in %gs", time_left/1000)
+			tmr.alarm(2, time_left, 0, function()
+				tmr.stop(2)
+				restart (0)
+			end)
 		end
-
-		Log("will restart in %gs", time_left/1000)
-		tmr.alarm(2, time_left, 0, function()
-			tmr.stop(2)
-			restart ()
-		end)
 	else
 		Log("not sleeping")
 		runCount = nil	-- in case we rerun in same env
+		restart (nil)	-- just update stats
 	end
 end
 

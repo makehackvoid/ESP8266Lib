@@ -1,8 +1,9 @@
-function Log (...) mLog ("wifi", unpack(arg)) end
 local tmr = tmr
+time_wifi = done_file (tmr.now())
+local mLog = mLog
+local function Log (...) if print_log then mLog ("wifi", unpack(arg)) end end
 local out_toggle = out_toggle
 local sta = wifi.sta
-time_wifi = done_file (tmr.now())
 used ()
 out_bleep()
 
@@ -17,13 +18,10 @@ local function resetWiFi ()
 	Log ("resetWIFI")
 	sta.disconnect()
 	if clientIP then
---		sta.autoconnect(0)
 		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
 	end
 	wifi.setmode(wifi.STATION)
-	sta.config(ssid, passphrase, 1)
---	sta.autoconnect(1)
---	sta.connect()
+	sta.config(ssid, passphrase, 1, bssid)
 end
 
 local function haveConnection()

@@ -1,8 +1,7 @@
 time_First = tmr.now()
 time_dofile = time_dofile + (time_First-start_dofile)
-local function Log (...)
-	mLog ("first", unpack(arg))
-end
+local mLog = mLog
+local function Log (...) if print_log then mLog ("first", unpack(arg)) end end
 used ()
 
 local conn = net.createConnection(net.TCP, 0)

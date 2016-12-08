@@ -42,3 +42,8 @@ Notes:
 	Remove all unused modules in `app/include/user_modules.h`
 	Set FLASH_512K in `app/include/user_config.h` to get fastest times.
 
+Note that there is no `init.lua`. Rename one of the `i?.lua` as required. `i0.lua` is a basic init
+script that runs the app. `i1.lua` overrides two settings (used for testing) and `id.lua` is an example of setting many overrides.
+
+`i2.lua` does not run the app but just cycles through 20s of deep sleeps. I use it to measure power usage. You can stop it by grounding pin gpio5 (D1) or any other pin that you set there.
+

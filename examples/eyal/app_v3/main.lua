@@ -1,4 +1,5 @@
-function Log (...) mLog ("main", unpack(arg)) end
+local mLog = mLog
+local function Log (...) if print_log then mLog ("main", unpack(arg)) end end
 time_setup = done_file (tmr.now())
 used ()
 out_bleep()
@@ -74,9 +75,10 @@ local function main()
 	if not do_WiFi then do_Save = false end
 
 -- select items included in the reported message
-	if nil == send_times then send_times = true end
-	if nil == send_stats then send_stats = true end
-	if nil == send_radio then send_radio = true end
+	if nil == send_times  then send_times  = true end
+	if nil == send_reason then send_reason = true end
+	if nil == send_stats  then send_stats  = true end
+	if nil == send_radio  then send_radio  = true end
 end
 
 if not abort then main() end
@@ -119,14 +121,15 @@ local function wifi_setup()
 	local ip = sta.getip()
 	if not ip or ip ~= clientIP then
 		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
-		Log ("static IP set to %s", clientIP)
-		local cssid = sta.getconfig()
-		if not cssid or cssid ~= ssid then
-			sta.config(ssid, passphrase, 1, bssid)
-			Log ("AP set to %s", ssid)
-		end
+		Log ("static IP set to '%s'", clientIP)
 	end
-	sta.status()
+	local cssid = sta.getconfig()
+	if not cssid or cssid ~= ssid then
+		wifi.setmode(wifi.STATION)
+		sta.config(ssid, passphrase, 1, bssid)
+		Log ("AP set to '%s'", ssid)
+	end
+	sta.status()	-- rumoured to kick start WiFi connection
 end
 
 if not abort and do_WiFi then wifi_setup() end
@@ -156,6 +159,7 @@ local function setup_rtcmem()
 	rtca_failRead  = rtca_failRead  or (rtca_magic - 4)
 	rtca_lastTime  = rtca_lastTime  or (rtca_magic - 5)
 	rtca_totalTime = rtca_totalTime or (rtca_magic - 6)
+	rtca_timeLeft  = rtca_timeLeft  or (rtca_magic - 7)
 
 	newRun = rtc_magic ~= rtcmem.read32(rtca_magic)
 	if newRun then
@@ -165,6 +169,7 @@ local function setup_rtcmem()
 		rtcmem.write32(rtca_failRead, 0)
 		rtcmem.write32(rtca_lastTime, 0)
 		rtcmem.write32(rtca_totalTime, 0)
+		rtcmem.write32(rtca_timeLeft, 0)
 		rtcmem.write32(rtca_magic, rtc_magic)
 		Log ("run initialized")
 	end
