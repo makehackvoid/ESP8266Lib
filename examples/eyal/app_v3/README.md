@@ -50,5 +50,5 @@ Note that there is no `init.lua`. Rename one of the `i[01].lua` as required.
 `i1.lua` overrides a setting (used for testing).
 
 `ie.lua` is a test program to measure the time to establish a wifi connection.
-`it.lua` is a test program that cycles through 20s of deep sleeps to measure power usage.
+`it.lua` is a test program that cycles through 20s of deep sleep to measure power usage.
 
