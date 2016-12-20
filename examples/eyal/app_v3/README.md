@@ -17,7 +17,7 @@ To set a new access point run in this way:
 First edit `main.lua` to reflect your setup. Instructions inside.
 
 Next you need to set the per-esp parameters in a file called `esp-[MAC].lua`.
-Run the test program `show-ow.lua` to display the MAC (in the required format) and the one-wire IDs of the sensors. The program can read multiple sensors.
+Run the test program `show.lua` to display the MAC (in the required format) and the one-wire IDs of the sensors. The program can read multiple sensors. It also lists other details of the esp.
 
 One example file `esp-18-FE-34-FE-85-3D.lua` is provided.
 If the setup file is missing then `esp-test.lua` is used.
