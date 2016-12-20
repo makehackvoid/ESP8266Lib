@@ -49,5 +49,6 @@ Note that there is no `init.lua`. Rename one of the `i[01].lua` as required.
 `i0.lua` is a basic init script that runs the app.
 `i1.lua` overrides a setting (used for testing).
 
-`ie.lua` is a test program to measure the time to establish a wifi connection. Same gpio5 as above.
-`it.lua` is a test program that cycles through 20s of deep sleeps. Used to measure power usage in deep sleep.
+`ie.lua` is a test program to measure the time to establish a wifi connection.
+`it.lua` is a test program that cycles through 20s of deep sleeps to measure power usage.
+
