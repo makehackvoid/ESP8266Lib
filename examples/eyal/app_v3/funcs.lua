@@ -1,5 +1,3 @@
-function Log (...) mLog ("funcs", unpack(arg)) end
-
 function mLog (modname, message, ...)
 	if print_log then
 		if #arg > 0 then
@@ -8,6 +6,7 @@ function mLog (modname, message, ...)
 		print (("%.6f %s: %s"):format (tmr.now()/1000000, modname, message))
 	end
 end
+local function Log (...) mLog ("funcs", unpack(arg)) end
 
 function done_file(now)
 	local t = now - start_dofile
@@ -21,6 +20,22 @@ end
 done_file (tmr.now())
 
 abort = false
+
+function mTrace(module, n)
+	if nil ~= rtcmem then
+		if nil == rtca_tracePoint then
+			rtca_tracePoint = 127 - 8	-- see funcs.lua!
+		end
+		if nil == last_trace then	-- first call
+			last_trace = rtcmem.read32(rtca_tracePoint)
+			this_trace = 0
+		end
+		this_trace = this_trace/100 + (module*10 + n)*1000000
+-- print (("%.6f %02x %02x %u"):format (tmr.now()/1000000, module, n, this_trace))
+		rtcmem.write32(rtca_tracePoint, this_trace)
+	end
+end
+local function Trace(n) mTrace(1, n) end Trace (0)
 
 function used ()
 	if print_stats then
@@ -76,6 +91,8 @@ function out_toggle()
 end
 
 function restart_really(time_left)
+	out_bleep()
+
 --[[
 	WAKE_RF_DEFAULT  = 0 -- CAL or not after wake up, depends on init data byte 108.
 	WAKE_RFCAL       = 1 -- CAL        after wake up, there will be large current.
@@ -91,7 +108,6 @@ function restart_really(time_left)
 		end
 		Log("runCount=%d rf_mode=%d", runCount, rf_mode)
 		if nil ~= rtctime then
-			out_bleep()
 --			rtctime.dsleep_aligned ((sleep_time+dsleep_delay)*rtc_rate, 0, rf_mode)
 			rtctime.dsleep (time_left, rf_mode)
 		else
@@ -112,10 +128,6 @@ function restart(time_left)
 	end
 
 	if nil == time_left then return end
-
---	if wifi.sta.status() > 0 then
---		wifi.sta.disconnect()
---	end
 
 	local t_delay = 0
 	if grace_time then
@@ -140,26 +152,31 @@ function doSleep ()
 		time_left = sleep_time - (sleep_start + dsleep_delay*rtc_rate)
 		if time_left > 0 then
 			Log("dsleep %gs\n", time_left/1000000)
+			Trace(1)
 			restart (time_left)
 		else
 			Log("restart now\n")
+			Trace(2)
 			restart (0)
 		end
 	elseif sleep_time < 0 then			-- wait requested
 		time_left = (-sleep_time - sleep_start) / 1000
 		if time_left <= 0 then
 			Log("restart now\n")
+			Trace(3)
 			restart (0)
 		else
 			Log("restart in %gs", time_left/1000)
 			tmr.alarm(2, time_left, 0, function()
 				tmr.stop(2)
+				Trace(4)
 				restart (0)
 			end)
 		end
 	else
 		Log("not sleeping")
 		runCount = nil	-- in case we rerun in same env
+		Trace(5)
 		restart (nil)	-- just update stats
 	end
 end

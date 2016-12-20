@@ -2,7 +2,9 @@ time_First = tmr.now()
 time_dofile = time_dofile + (time_First-start_dofile)
 local mLog = mLog
 local function Log (...) if print_log then mLog ("first", unpack(arg)) end end
+local function Trace(n) trace(6, n) end Trace (0)
 used ()
+out_bleep()
 
 local conn = net.createConnection(net.TCP, 0)
 

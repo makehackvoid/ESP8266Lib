@@ -2,6 +2,7 @@ local tmr = tmr
 done_file (tmr.now())
 local mLog = mLog
 local function Log (...) if print_log then mLog ("read", unpack(arg)) end end
+local function Trace(n) mTrace(4, n) end Trace (0)
 used ()
 out_bleep()
 
@@ -55,7 +56,12 @@ end--]]
 
 local function read_bme280()
 	out_bleep()
-	local dev = bme280.init(i2c_SDA, i2c_SCL, 1, 1, 1, 0, 0, 0)	-- sleep mode
+	local dev = bme280.init(i2c_SDA, i2c_SCL, 1, 1, 1, 0, 0, 0)
+		-- i2c_SDA,i2c_SCL	i2c pins
+		-- 1, 1, 1		oversampling ×1 (read once)
+		-- 0			Sleep mode
+		-- 0			inactive_duration (not used)
+		-- 0			Filter off
 	if nil == dev or 0 == dev then
 		Log ("bme280.init failed")
 		return
@@ -63,6 +69,9 @@ local function read_bme280()
 	Log ("found %s", ({"none","bme280", "bmp280"})[dev])
 
 	local T, QFE, H, P = bme280.read(622)	-- my property's altitude is 622m
+		-- QFE	raw air pressure in hectopascals
+		-- P	sea level equivalent air pressure in hectopascals (QNH)
+		-- 622	sensor location altitude in meters
 	if nil == T then
 		Log ("bme280.read failed")
 		T, P, H = 8500, 0, 0

@@ -2,6 +2,7 @@ local tmr = tmr
 local time_Save = done_file (tmr.now())
 local mLog = mLog
 local function Log (...) if print_log then mLog ("save", unpack(arg)) end end
+local function Trace(n) mTrace(7, n) end Trace (0)
 used ()
 out_bleep()
 
@@ -75,10 +76,11 @@ reason = ri.reason;
 
 	local stats = ""
 	if send_stats then
-		stats = (" stats=fs%d,fh%d,fr%d"):format(
+		stats = (" stats=fs%d,fh%d,fr%d,t%u"):format(
 			failSoft,
 			failHard,
-			failRead)
+			failRead,
+			(last_trace or 99999999))
 		if send_mem then
 			local mu = mem_used or 0
 			local mh = mem_heap or 0

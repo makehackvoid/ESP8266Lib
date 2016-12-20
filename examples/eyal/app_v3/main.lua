@@ -1,6 +1,7 @@
 local mLog = mLog
 local function Log (...) if print_log then mLog ("main", unpack(arg)) end end
 time_setup = done_file (tmr.now())
+local function Trace(n) mTrace(3, n) end Trace (0)
 used ()
 out_bleep()
 
@@ -88,7 +89,7 @@ local function wifi_setup()
 -- your access point details
 	if nil == ssid then
 		-- leave bssid as nil unless you really need it
-		ssid, passphrase, bssid = "SSID", "PASSPHRASE", "B0-48-7A-C2-B8-CC"
+		ssid, passphrase, bssid = "SSID", "PASS", nil -- "XX-XX-XX-XX-XX-XX"
 	end
 
 -- if you want to set up new WiFi then set
@@ -120,11 +121,13 @@ local function wifi_setup()
 -- we want to set this up asap (to stop dhcpc)
 	local ip = sta.getip()
 	if not ip or ip ~= clientIP then
+		Trace (1)
 		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
 		Log ("static IP set to '%s'", clientIP)
 	end
 	local cssid = sta.getconfig()
 	if not cssid or cssid ~= ssid then
+		Trace (2)
 		wifi.setmode(wifi.STATION)
 		sta.config(ssid, passphrase, 1, bssid)
 		Log ("AP set to '%s'", ssid)
@@ -151,15 +154,16 @@ local function setup_rtcmem()
 		newRun = true	-- always fetch runCount from server
 		return
 	end
-	rtc_magic      = rtc_magic      or 0x6adad0da
-	rtca_magic     = rtca_magic     or 127		-- last slot
-	rtca_runCount  = rtca_runCount  or (rtca_magic - 1)
-	rtca_failSoft  = rtca_failSoft  or (rtca_magic - 2)
-	rtca_failHard  = rtca_failHard  or (rtca_magic - 3)
-	rtca_failRead  = rtca_failRead  or (rtca_magic - 4)
-	rtca_lastTime  = rtca_lastTime  or (rtca_magic - 5)
-	rtca_totalTime = rtca_totalTime or (rtca_magic - 6)
-	rtca_timeLeft  = rtca_timeLeft  or (rtca_magic - 7)
+	rtc_magic       = rtc_magic       or 0x6adad0da
+	rtca_magic      = rtca_magic      or 127		-- last slot
+	rtca_runCount   = rtca_runCount   or (rtca_magic - 1)
+	rtca_failSoft   = rtca_failSoft   or (rtca_magic - 2)
+	rtca_failHard   = rtca_failHard   or (rtca_magic - 3)
+	rtca_failRead   = rtca_failRead   or (rtca_magic - 4)
+	rtca_lastTime   = rtca_lastTime   or (rtca_magic - 5)
+	rtca_totalTime  = rtca_totalTime  or (rtca_magic - 6)
+	rtca_timeLeft   = rtca_timeLeft   or (rtca_magic - 7)
+	rtca_tracePoint = rtca_tracePoint or (rtca_magic - 8)
 
 	newRun = rtc_magic ~= rtcmem.read32(rtca_magic)
 	if newRun then
@@ -170,6 +174,7 @@ local function setup_rtcmem()
 		rtcmem.write32(rtca_lastTime, 0)
 		rtcmem.write32(rtca_totalTime, 0)
 		rtcmem.write32(rtca_timeLeft, 0)
+		rtcmem.write32(rtca_tracePoint, -1)
 		rtcmem.write32(rtca_magic, rtc_magic)
 		Log ("run initialized")
 	end
