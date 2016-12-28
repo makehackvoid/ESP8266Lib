@@ -64,6 +64,18 @@ Set configuration for a specific esp. It is named after the MAC address. If it i
 ### read.lua
 Read devices.
 
+### ds18b20.lua
+A module to manage this one-wire temperature sensor.
+
+### ds3231.lua
+A module to read temperature from this I2C clock. It is a cut down version of the full device support module.
+
+## i2clib.lua
+Some common I2C functions, used by the `ds3231` module (and other devices not used in this project).
+
+### bme320.lua
+A module to manage this temperature/pressure/humidity I2C sensor.
+
 ### wifi.lua
 Establish a WiFi connection. This usually happens automatically.
 
