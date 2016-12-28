@@ -45,10 +45,38 @@ Notes:
 
 You can stop any program by grounding pin gpio5 (D1) or any other pin that you set there.
 
+### The following programs are executed in the listed order.
+
+### init.lua
 Note that there is no `init.lua`. Rename one of the `i[01].lua` as required.
 `i0.lua` is a basic init script that runs the app.
 `i1.lua` overrides a setting (used for testing).
 
-`ie.lua` is a test program to measure the time to establish a wifi connection.
-`it.lua` is a test program that cycles through 20s of deep sleep to measure power usage.
+### funcs.lua
+Define some global functions, called first.
+
+### main.lua
+Establish the environment and set default values where necessary.
+
+### esp-AA-BB-CC-DD-EE-FF.lua
+Set configuration for a specific esp. It is named after the MAC address. If it is not found then `test.lua` is used.
+
+### read.lua
+Read devices.
+
+### wifi.lua
+Establish a WiFi connection. This usually happens automatically.
+
+### first.lua
+On first run (when `rtcmem` is found uninitialised) request the last run number from the server.
+
+### save.lua
+The final act is to save the collected information. It is sent to the server using UPD, but TCP is also possible (though not tested recently). It can be changed to anything else desired (e.g. use MQTT).
+
+### some test programs
+`ie.lua` measure the time to establish a wifi connection. Rename to `init.lua`.
+
+`it.lua` cycle through 20s of deep sleep to measure power usage. Rename to `init.lua`.
+
+`show.lua` display information about the esp and possibly the one-wire devices attached.
 
