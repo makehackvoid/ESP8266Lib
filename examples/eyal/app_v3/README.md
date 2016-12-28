@@ -59,7 +59,7 @@ Define some global functions, called first.
 Establish the environment and set default values where necessary.
 
 ### esp-AA-BB-CC-DD-EE-FF.lua
-Set configuration for a specific esp. It is named after the MAC address. If it is not found then `test.lua` is used.
+Set configuration for a specific esp. It is named after the MAC address. If it is not found then `esp-test.lua` is used.
 
 ### read.lua
 Read devices.
