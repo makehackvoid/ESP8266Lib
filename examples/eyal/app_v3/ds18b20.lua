@@ -152,8 +152,9 @@ function read(addr, unit)
 
 	if (nil == data) then return nil end
 	local t = data:byte(1) + data:byte(2) * 256
-	if (t > 32767) then
-		t = t - 65536
+	if (65535 == t) then return nil end	-- 0xffff
+	if (t > 32767) then			-- 0x7fff
+		t = t - 65536			-- 0x8000
 	end
 	t = t*frac
 	if (nil == unit or C == unit) then

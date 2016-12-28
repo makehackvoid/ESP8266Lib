@@ -30,29 +30,12 @@ local function read_ds18b20()
 
 	for n = 1,#ow_addr do
 		local tC = t.read(ow_addr[n])
-		if tC == nil or tC == "85.0" then
+		if tC == nil or tC == "85.0" or tC == 127.9375 then
 			tC = 85
 		end
 		temp[#temp+1] = tC
 	end
 end
-
---[[local function read_ds3231()
-	if print_stats then Log("calling ds3231") end
-	start_dofile = tmr.now()
-	local t = require ("ds3231")
-	local tm = tmr.now()
-	done_file (tm)
-	out_bleep()
-	time_read = time_read + (tm - start_dofile)	-- adjust time
-
-	if not t.setup (i2c_SDA, i2c_SCL) then
-		Log ("ds3231 setup failed")
-	else
-		tmr.wdclr()
-		temp[#temp+1] = t.getTemp()
-	end
-end--]]
 
 local function read_bme280()
 	out_bleep()
@@ -86,6 +69,37 @@ local function read_bme280()
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 end
 
+--[[
+local function read_ds3231()
+	if print_stats then Log("calling ds3231") end
+	start_dofile = tmr.now()
+	local t = require ("ds3231")
+	local tm = tmr.now()
+	done_file (tm)
+	out_bleep()
+	time_read = time_read + (tm - start_dofile)	-- adjust time
+
+	if not t.setup (i2c_SDA, i2c_SCL) then
+		Log ("ds3231 setup failed")
+	else
+		tmr.wdclr()
+		temp[#temp+1] = t.getTemp()
+	end
+end
+--]]
+
+local function have_pin(pin, pin_name, device_name)
+	if not pin then
+		Log ("no %s pin for %s", pin_name, device_name)
+		return false
+	end
+	if pin < 1  or pin > 13 then	-- see GPIO_PIN_NUM in app/platform/pin_map.h
+		Log ("invalid %s pin %d for %s", pin_name, pin, device_name)
+		return false
+	end
+	return true
+end
+
 temp = {}
 time_read = tmr.now()
 
@@ -93,38 +107,36 @@ if not read_device then read_device = "" end
 for device in string.gmatch(read_device, "[^,]+") do
 	Log ("reading '%s'", device)
 	if device == "ds18b20" then
-		if ow_pin < 0 then
-			Log ("no ow pin, not reading ds18b20")
-		elseif #ow_addr < 1 then
-			Log ("no ow listed")
-		else
-			read_ds18b20()
+		if have_pin(ow_pin, "OW", device) then
+			if #ow_addr < 1 then
+				Log ("no ow devices listed for %s", device)
+			else
+				read_ds18b20()
+			end
 		end
 		read_ds18b20 = nil
 		t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
 		device = nil
 	end
+	if device == "bme280" then
+		if have_pin(i2c_SDA, "SDA", device) and
+		   have_pin(i2c_SCL, "SCL", device) then
+			read_bme280()
+		end
+		read_bme280 = nil
+		device = nil
+	end
 --[[
 	if device == "ds3231" then
-		if i2c_SDA >= 0 and i2c_SCL >= 0 then
+		if have_pin(i2c_SDA, "SDA", device) and
+		   have_pin(i2c_SCL, "SCL", device) then
 			read_ds3231()
-		else
-			Log ("no i2c pins, not reading ds3231")
 		end
 		read_ds3231 = nil
 		ds3231, package.loaded["ds3231"] = nil, nil
 		device = nil
 	end
 --]]
-	if device == "bme280" then
-		if i2c_SDA >= 0 and i2c_SCL >= 0 then
-			read_bme280()
-		else
-			Log ("no i2c pins, not reading bme280")
-		end
-		read_bme280 = nil
-		device = nil
-	end
 
 	if device then
 		if not pcall (function() do_file("read-"..device, true) end) then
