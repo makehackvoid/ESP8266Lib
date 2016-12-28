@@ -74,9 +74,9 @@ On first run (when `rtcmem` is found uninitialised) request the last run number 
 The final act is to save the collected information. It is sent to the server using UPD, but TCP is also possible (though not tested recently). It can be changed to anything else desired (e.g. use MQTT).
 
 ### some test programs
-`ie.lua` measure the time to establish a wifi connection. Rename to `init.lua`.
+`ie.lua` measure the time to establish a WiFi connection. Rename to `init.lua`.
 
-`it.lua` cycle through 20s of deep sleep to measure power usage. Rename to `init.lua`.
+`it.lua` cycle through 20s of deep sleep to measure sleep power usage. Rename to `init.lua`.
 
 `show.lua` display information about the esp and possibly the one-wire devices attached.
 
