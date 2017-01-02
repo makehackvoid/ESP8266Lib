@@ -90,7 +90,7 @@ local function wifi_setup()
 -- your access point details
 	if nil == ssid then
 		-- leave bssid as nil unless you really need it
-		ssid, passphrase, bssid = "eyal", "this_is_not_my_password_anymore...", nil -- "B0-48-7A-C2-B8-CC"
+		ssid, passphrase, bssid = "SSID", "PASSPHRADE", nil -- "XX-XX-XX-XX-XX-XX"
 	end
 
 -- if you want to set up new WiFi then set
