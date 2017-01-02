@@ -107,7 +107,7 @@ function restart_really(time_left)
 			rf_mode = (runCount % rfcal_rate > 0) and 2 or 1
 		end
 		Log("runCount=%d rf_mode=%d", runCount, rf_mode)
-		if nil ~= rtctime then
+		if use_rtctime then
 --			rtctime.dsleep_aligned ((sleep_time+dsleep_delay)*rtc_rate, 0, rf_mode)
 			rtctime.dsleep (time_left, rf_mode)
 		else
@@ -138,9 +138,13 @@ function restart(time_left)
 		end
 	end
 
-	tmr.alarm(3, t_delay, 0, function()
+	if t_delay > 0 then
+		tmr.alarm(3, t_delay, 0, function()
+			restart_really(time_left)
+		end)
+	else
 		restart_really(time_left)
-	end)
+	end
 
 end
 

@@ -1,6 +1,7 @@
 local tmr = tmr
 local time_Save = done_file (tmr.now())
 local mLog = mLog
+local sta = wifi.sta
 local function Log (...) if print_log then mLog ("save", unpack(arg)) end end
 local function Trace(n) mTrace(7, n) end Trace (0)
 used ()
@@ -94,7 +95,7 @@ reason = ri.reason;
 	local radio = ""
 	if send_radio then
 		radio = (" radio=s%d"):format(
-			-wifi.sta.getrssi())
+			-sta.getrssi())
 	end
 
 	if adc_factor then	-- no vdd with adc anymore
@@ -119,8 +120,13 @@ reason = ri.reason;
 	end
 
 	if not weather then weather = "" end
-
-	return ("store %s %3d%s%s%s%s adc=%.3f vdd=%.3f %s"):format(
+	if "mqtt" == save_proto then
+		command = ''
+	else
+		command = 'store '
+	end
+	return ("%s%s %3d%s%s%s%s adc=%.3f vdd=%.3f %s%s"):format(
+		command,
 		clientID,
 		runCount,
 		times,
@@ -129,7 +135,8 @@ reason = ri.reason;
 		weather,
 		vbat / 1000,
 		vdd33 / 1000,
-		tCs)
+		tCs,
+		save_eom)
 end
 
 if have_rtc_mem then
@@ -161,7 +168,8 @@ elseif "udp" == save_proto then
 
 	Log ("send '%s'", msg)
 	conn:send (msg)
---[[else	-- tcp
+--[[
+elseif "tcp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)
 
 	conn:on("disconnection", function(conn)
@@ -186,4 +194,44 @@ elseif "udp" == save_proto then
 
 	Log("connecting to %s:%d", saveServer, savePort)
 	conn:connect(savePort, saveServer)
---]]end
+--]]
+elseif "mqtt" == save_proto then
+	local mqtt_host = mqtt_host or saveServer
+	local mqtt_port = mqtt_port or 1883
+	local mqtt_client = string.gsub(string.lower(sta.getmac()),":","-")
+	local topic = ("stats/%s/message"):format(mqtt_client)
+	local mqttClient = mqtt.Client(mqtt_client, 2)
+	mqttClient:connect (mqtt_host, mqtt_port, 0,
+	function(client)
+		mqttClient:publish (topic, msg, 0, 1, function (client)
+			msg = nil
+			client:close()
+			doSleep()
+		end)
+	end,
+	function(client, reason)
+--[[
+mqtt.CONN_FAIL_SERVER_NOT_FOUND		-5	There is no broker listening at the specified IP Address and Port
+mqtt.CONN_FAIL_NOT_A_CONNACK_MSG	-4	The response from the broker was not a CONNACK as required by the protocol
+mqtt.CONN_FAIL_DNS			-3	DNS Lookup failed
+mqtt.CONN_FAIL_TIMEOUT_RECEIVING	-2	Timeout waiting for a CONNACK from the broker
+mqtt.CONN_FAIL_TIMEOUT_SENDING		-1	Timeout trying to send the Connect message
+mqtt.CONNACK_ACCEPTED			0	No errors. Note: This will not trigger a failure callback.
+mqtt.CONNACK_REFUSED_PROTOCOL_VER	1	The broker is not a 3.1.1 MQTT broker.
+mqtt.CONNACK_REFUSED_ID_REJECTED	2	The specified ClientID was rejected by the broker. (See mqtt.Client())
+mqtt.CONNACK_REFUSED_SERVER_UNAVAILABLE	3	The server is unavailable.
+mqtt.CONNACK_REFUSED_BAD_USER_OR_PASS	4	The broker refused the specified username or password.
+mqtt.CONNACK_REFUSED_NOT_AUTHORIZED	5	The username is not authorized.
+--]]
+		Log("mqtt:connect failed %d", reason)
+		Log ("msg='%s'", msg)
+		msg = nil
+		doSleep()
+	end)
+else
+	print_log = true
+	Log("unknown save_proto='%s'", save_proto)
+	Log ("msg='%s'", msg)
+	msg = nil
+	doSleep()
+end

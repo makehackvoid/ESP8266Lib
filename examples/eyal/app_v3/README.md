@@ -50,7 +50,7 @@ You can stop any program by grounding pin gpio5 (D1) or any other pin that you s
 ### init.lua
 Note that there is no `init.lua`. Rename one of the `i[01].lua` as required.
 `i0.lua` is a basic init script that runs the app.
-`i1.lua` overrides a setting (used for testing).
+`i2.lua` how to override settings (used for testing).
 
 ### funcs.lua
 Define some global functions, called first.

@@ -31,7 +31,8 @@ local function main()
 	sleep_time = sleep_time or 60			-- seconds
 	sleep_time = sleep_time * 1000000		-- tmr
 
-	if nil ~= rtctime then
+	use_rtctime = use_rtctime or (nil ~= rtctime)
+	if use_rtctime then
 		wakeup_delay = wakeup_delay or   1300	-- 1.3ms to enter with rtctime.dsleep
 	else
 		wakeup_delay = wakeup_delay or 105000	-- time to enter with node.dsleep
@@ -89,7 +90,7 @@ local function wifi_setup()
 -- your access point details
 	if nil == ssid then
 		-- leave bssid as nil unless you really need it
-		ssid, passphrase, bssid = "SSID", "PASS", nil -- "XX-XX-XX-XX-XX-XX"
+		ssid, passphrase, bssid = "eyal", "this_is_not_my_password_anymore...", nil -- "B0-48-7A-C2-B8-CC"
 	end
 
 -- if you want to set up new WiFi then set
@@ -113,7 +114,14 @@ local function wifi_setup()
 -- what protocol to use to send the reading?
 	save_proto = save_proto or "udp"	-- "udp" or "tcp"
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
-	udp_grace_ms = udp_grace_ms or 30
+	if "udp" == save_proto then
+		udp_grace_ms = udp_grace_ms or 30
+	else
+		udp_grace_ms = 0
+	end
+
+-- end of message marker
+	save_eom = save_eom or ''
 
 -- how often to do WiFi RFCAL
 	rfcal_rate = rfcal_rate or 10
@@ -141,14 +149,7 @@ wifi_setup = nil
 time_setup = tmr.now() - time_setup
 
 -- address in RTC of counters and value of magic
--- standard lua is missing the rtcmem functions
 local function setup_rtcmem()
-	if nil ~= rtctime then
-		if 0 == rtctime.get() then	-- was never set
-			rtctime.set(0,0)
-		end
-	end
-
 	have_rtc_mem = nil ~= rtcmem
 	if not have_rtc_mem then
 		newRun = true	-- always fetch runCount from server

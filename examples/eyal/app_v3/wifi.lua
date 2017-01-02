@@ -16,12 +16,12 @@ local function cleanup()
 	eventmon.unregister(eventmon.STA_DISCONNECTED)
 end
 
-eventmon.register(eventmon.STA_GOT_IP, function(T)
+local function have_connection(ip)
 	time_wifi = tmr.now() - time_wifi
 	Trace(1)
 	cleanup()
 	Log ("WiFi available after %.6f seconds, ip=%s",
-		time_wifi/1000000, T.IP)
+		time_wifi/1000000, ip)
 	if did_reset then
 		incrementCounter(rtca_failSoft)
 	end
@@ -29,14 +29,21 @@ eventmon.register(eventmon.STA_GOT_IP, function(T)
 		if newRun then
 			do_file ("first")
 			return
+		else
+			runCount = incrementCounter(rtca_runCount)
 		end
-		runCount = incrementCounter(rtca_runCount)
 	end
 	time_First = 0
 	do_file ("save")
+end
+
+eventmon.register(eventmon.STA_GOT_IP, function(T)
+	Log("got IP '%s'", T.IP)
+	have_connection(T.IP)
 end)
 
 eventmon.register(eventmon.STA_DISCONNECTED, function(T)
+	Log("disconnected, reason %d", T.reason)
 	if did_reset then
 		Trace(3)
 		cleanup()
@@ -55,3 +62,4 @@ eventmon.register(eventmon.STA_DISCONNECTED, function(T)
 		did_reset = true
 	end
 end)
+
