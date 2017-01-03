@@ -19,6 +19,9 @@ local function format_message()
 		timeLeft  = rtcmem.read32(rtca_timeLeft)	-- us
 	end
 
+	local command = 'store '
+	if "mqtt" == save_proto then command = '' end
+
 	local times = ""
 	if send_times then
 		time_Save = tmr.now() - time_Save
@@ -40,6 +43,10 @@ local function format_message()
 				times,
 				rtc_start_s, rtc_start_u)
 		end
+	end
+
+	local stats = ""
+	if send_stats then
 		local reasons = ""
 		if send_reason then
 --[[
@@ -69,27 +76,26 @@ code = rtc_get_reset_reason();
 reason = ri.reason;
 --]]
 			local code, reason = node.bootreason()
-			times = ("%s,b%d/%d"):format(
-				times,
+			reasons = (",c%d,r%d"):format(
 				code, reason)
 		end
-	end
 
-	local stats = ""
-	if send_stats then
-		stats = (" stats=fs%d,fh%d,fr%d,t%u"):format(
-			failSoft,
-			failHard,
-			failRead,
-			(last_trace or 99999999))
+		local mems = ""
 		if send_mem then
 			local mu = mem_used or 0
 			local mh = mem_heap or 0
-			stats = ("%s,mu%d,mh%d"):format(
-				stats,
+			mems = (",mu%d,mh%d"):format(
 				mu,
 				mh)
 		end
+
+		stats = (" stats=fs%d,fh%d,fr%d,t%x%s%s"):format(
+			failSoft,
+			failHard,
+			failRead,
+			(last_trace or 0xffffffff),
+			reasons,
+			mems)
 	end
 
 	local radio = ""
@@ -97,6 +103,8 @@ reason = ri.reason;
 		radio = (" radio=s%d"):format(
 			-sta.getrssi())
 	end
+
+	if not weather then weather = "" end
 
 	if adc_factor then	-- no vdd with adc anymore
 		vbat = adc.read(0)*adc_factor
@@ -119,12 +127,6 @@ reason = ri.reason;
 		end
 	end
 
-	if not weather then weather = "" end
-	if "mqtt" == save_proto then
-		command = ''
-	else
-		command = 'store '
-	end
 	return ("%s%s %3d%s%s%s%s adc=%.3f vdd=%.3f %s%s"):format(
 		command,
 		clientID,
@@ -143,95 +145,26 @@ if have_rtc_mem then
 	rtcmem.write32(rtca_runCount, runCount)
 end
 
-local msg = format_message()
+message = format_message()
 format_message = nil
 
 if not do_Save then
 	print_log = true
-	Log (msg)
-	msg = nil
+	Log (message)
+	message = nil
 	doSleep()
 elseif "udp" == save_proto then
-	local conn = net.createUDPSocket()
-	if nil == conn then
-		Log ("net.create failed")
-		msg = nil
+	do_file("save-udp")
+elseif "tcp" == save_proto then
+	do_file("save-tcp")
+elseif "mqtt" == save_proto then
+	do_file("save-mqtt")
+else
+	pgm = ("save-%s"):format(save_proto)
+	if not pcall (function() do_file(pgm, true) end) then
+		Log ("missing or failing '%s'", pgm)
+		Log ("message='%s'", message)
+		message = nil
 		doSleep()
 	end
-
-	Log ("send '%s'", msg)
-	conn:send(savePort, saveServer, msg, function(conn)
-		grace_time = tmr.now() + udp_grace_ms*1000
-		Log ("sent")
-		msg = nil
-
-		conn:close()
-		doSleep()
-	end)
---[[
-elseif "tcp" == save_proto then
-	local conn = net.createConnection(net.TCP, 0)
-
-	conn:on("disconnection", function(conn)
-		Log ("disconnected")
-
-		doSleep()
-	end)
-
-	conn:on("sent", function(conn)
-		Log ("sent")
-		msg = nil
-
-		conn:close()
-	end)
-
-	conn:on("connection", function(conn)
-		Log ("connected")
-
-		Log ("send '%s'", msg)
-		conn:send (msg)
-	end)
-
-	Log("connecting to %s:%d", saveServer, savePort)
-	conn:connect(savePort, saveServer)
---]]
-elseif "mqtt" == save_proto then
-	local mqtt_host = mqtt_host or saveServer
-	local mqtt_port = mqtt_port or 1883
-	local mqtt_client = string.gsub(string.lower(sta.getmac()),":","-")
-	local topic = ("stats/%s/message"):format(mqtt_client)
-	local mqttClient = mqtt.Client(mqtt_client, 2)
-	mqttClient:connect (mqtt_host, mqtt_port, 0,
-	function(client)
-		mqttClient:publish (topic, msg, 0, 1, function (client)
-			msg = nil
-			client:close()
-			doSleep()
-		end)
-	end,
-	function(client, reason)
---[[
-mqtt.CONN_FAIL_SERVER_NOT_FOUND		-5	There is no broker listening at the specified IP Address and Port
-mqtt.CONN_FAIL_NOT_A_CONNACK_MSG	-4	The response from the broker was not a CONNACK as required by the protocol
-mqtt.CONN_FAIL_DNS			-3	DNS Lookup failed
-mqtt.CONN_FAIL_TIMEOUT_RECEIVING	-2	Timeout waiting for a CONNACK from the broker
-mqtt.CONN_FAIL_TIMEOUT_SENDING		-1	Timeout trying to send the Connect message
-mqtt.CONNACK_ACCEPTED			0	No errors. Note: This will not trigger a failure callback.
-mqtt.CONNACK_REFUSED_PROTOCOL_VER	1	The broker is not a 3.1.1 MQTT broker.
-mqtt.CONNACK_REFUSED_ID_REJECTED	2	The specified ClientID was rejected by the broker. (See mqtt.Client())
-mqtt.CONNACK_REFUSED_SERVER_UNAVAILABLE	3	The server is unavailable.
-mqtt.CONNACK_REFUSED_BAD_USER_OR_PASS	4	The broker refused the specified username or password.
-mqtt.CONNACK_REFUSED_NOT_AUTHORIZED	5	The username is not authorized.
---]]
-		Log("mqtt:connect failed %d", reason)
-		Log ("msg='%s'", msg)
-		msg = nil
-		doSleep()
-	end)
-else
-	print_log = true
-	Log("unknown save_proto='%s'", save_proto)
-	Log ("msg='%s'", msg)
-	msg = nil
-	doSleep()
 end

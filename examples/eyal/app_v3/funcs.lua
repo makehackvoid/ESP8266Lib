@@ -30,8 +30,7 @@ function mTrace(module, n)
 			last_trace = rtcmem.read32(rtca_tracePoint)
 			this_trace = 0
 		end
-		this_trace = this_trace/100 + (module*10 + n)*1000000
--- print (("%.6f %02x %02x %u"):format (tmr.now()/1000000, module, n, this_trace))
+		this_trace = this_trace/0x100 + (module*0x10 + n)*0x1000000
 		rtcmem.write32(rtca_tracePoint, this_trace)
 	end
 end

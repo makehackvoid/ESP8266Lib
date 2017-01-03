@@ -12,7 +12,6 @@ local function have_first()
 end
 
 if "mqtt" == save_proto then
-	local mqtt_host, mqtt_port = netGW, 1883
 	local mqtt_client = string.gsub(string.lower(wifi.sta.getmac()),":","-")
 	local topic = ("stats/%s/message"):format(mqtt_client)
 	local mqttClient = mqtt.Client(mqtt_client, 2)
@@ -42,8 +41,8 @@ if "mqtt" == save_proto then
 		client:close()
 		have_first()
 	end)
-	mqttClient:connect (mqtt_host, mqtt_port, 0)
-else
+	mqttClient:connect (saveServer, savePort, 0)
+elseif "tcp" == save_proto or "udp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)
 
 	conn:on("disconnection", function(conn, data)
@@ -79,5 +78,9 @@ else
 
 	tmr.wdclr()
 	conn:connect(savePort, saveServer)
+else
+	Log ("unknown save_proto '%s'", save_proto)
+	runCount = 1
+	have_first()
 end
 

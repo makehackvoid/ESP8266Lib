@@ -139,8 +139,9 @@ for device in string.gmatch(read_device, "[^,]+") do
 --]]
 
 	if device then
-		if not pcall (function() do_file("read-"..device, true) end) then
-			print ("missing read-"..device)
+		local pgm = ("read-%s"):format(device)
+		if not pcall (function() do_file(pgm, true) end) then
+			Log ("missing or failing '%s'", pgm)
 		end
 		device = nil
 	end

@@ -3,11 +3,14 @@ time_start = tmr.now()
 node.setcpufreq(node.CPU160MHZ)	-- do this asap
 last_trace = nil	-- not yet set
 -- do not change above this line --
---	saveServer = e4		-- send messages to this server server
---	savePort = 21883	-- for udp/tcp use this port
---	sleep_time = 10		-- cycle every 10 seconds
---	save_proto = "mqtt"	-- send message to an mqtt server (or 'udp' or 'tcp')
---	print_log = true	-- print debug messages
+--	saveServer = "192.168.2.7"	-- send messages to this server
+--	savePort = 21883		-- send messages to this port
+--	sleep_time = 10			-- cycle every 10 seconds
+--	save_proto = "udp"		-- send message to a udp/tcp/mqtt server
+--	save_proto = "mqtt"		-- send message to an mqtt server (or 'udp' or 'tcp')
+--	print_log = true		-- print debug messages
+--	print_dofile = true		-- print 'dofile' times
+--	print_usage = true		-- print memory usage stats
 -- do not change below this line --
 time_dofile = 0
 start_dofile = time_start

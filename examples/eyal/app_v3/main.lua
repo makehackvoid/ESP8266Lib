@@ -16,9 +16,9 @@ local function main()
 	if nil == clientID then
 		local mac = string.gsub(string.upper(sta.getmac()),":","-")
 		if not pcall (function() do_file("esp-" .. mac, true) end) then
-			print ("missing setup file, using default")
+			Log ("missing setup file, using default")
 			if not pcall (function() do_file("esp-test", true) end) then
-				print ("missing default setup file, aborting")
+				Log ("missing default setup file, aborting")
 				abort = true
 				return
 			end
@@ -62,7 +62,7 @@ local function main()
 	if magic_pin and magic_pin >= 0 then
 		gpio.mode (magic_pin, gpio.INPUT, gpio.PULLUP)
 		if 0 == gpio.read (magic_pin) then
-			print ("aborting by magic")
+			Log ("aborting by magic")
 			abort = true
 			return
 		end

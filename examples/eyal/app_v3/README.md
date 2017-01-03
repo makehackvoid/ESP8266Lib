@@ -81,8 +81,8 @@ Establish a WiFi connection. This usually happens automatically.
 ### first.lua
 On first run (when `rtcmem` is found uninitialised) request the last run number from the server.
 
-### save.lua
-The final act is to save the collected information. It is sent to the server using UPD, but TCP is also possible (though not tested recently). It can be changed to anything else desired (e.g. use MQTT).
+### save.lua, save-?.lua
+The final act is to save the collected information. `save.lua` format the message and the other modules send it to their respected UDP, TCP or mqtt server. Other server types can be easily added.
 
 ### some test programs
 `ie.lua` measure the time to establish a WiFi connection. Rename to `init.lua`.
