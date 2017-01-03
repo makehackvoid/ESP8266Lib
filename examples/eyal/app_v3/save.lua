@@ -152,9 +152,15 @@ if not do_Save then
 	msg = nil
 	doSleep()
 elseif "udp" == save_proto then
-	local conn = net.createConnection(net.UDP, 0)
+	local conn = net.createUDPSocket()
+	if nil == conn then
+		Log ("net.create failed")
+		msg = nil
+		doSleep()
+	end
 
-	conn:on("sent", function(conn)
+	Log ("send '%s'", msg)
+	conn:send(savePort, saveServer, msg, function(conn)
 		grace_time = tmr.now() + udp_grace_ms*1000
 		Log ("sent")
 		msg = nil
@@ -162,12 +168,6 @@ elseif "udp" == save_proto then
 		conn:close()
 		doSleep()
 	end)
-
-	Log("connecting to %s:%d", saveServer, savePort)
-	conn:connect(savePort, saveServer)
-
-	Log ("send '%s'", msg)
-	conn:send (msg)
 --[[
 elseif "tcp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)

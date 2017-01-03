@@ -37,6 +37,12 @@ local function have_connection(ip)
 	do_file ("save")
 end
 
+if 5 == sta.status() then
+	local ip = sta.getip()
+	Log("had IP '%s'", ip)
+	have_connection(ip)
+end
+
 eventmon.register(eventmon.STA_GOT_IP, function(T)
 	Log("got IP '%s'", T.IP)
 	have_connection(T.IP)
