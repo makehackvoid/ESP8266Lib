@@ -1,3 +1,6 @@
+-- Note: this app sets a static IP early (in main.lua) so there is no need to wait
+-- for a STA_GOT_IP event
+
 local tmr = tmr
 time_wifi = done_file (tmr.now())
 local mLog = mLog
@@ -12,7 +15,8 @@ local eventmon = wifi.eventmon
 local did_reset = false
 
 local function cleanup()
-	eventmon.unregister(eventmon.STA_GOT_IP)
+	eventmon.unregister(eventmon.STA_CONNECTED)
+--	eventmon.unregister(eventmon.STA_GOT_IP)
 	eventmon.unregister(eventmon.STA_DISCONNECTED)
 end
 
@@ -43,10 +47,18 @@ if 5 == sta.status() then
 	have_connection(ip)
 end
 
+eventmon.register(eventmon.STA_CONNECTED, function(T)
+	local ip = sta.getip()
+	Log("CONNECTED as %s status=%d", ip, wifi.sta.status())
+	have_connection(ip)
+end)
+
+--[[
 eventmon.register(eventmon.STA_GOT_IP, function(T)
 	Log("got IP '%s'", T.IP)
-	have_connection(T.IP)
+--	have_connection(T.IP)
 end)
+--]]
 
 eventmon.register(eventmon.STA_DISCONNECTED, function(T)
 	Log("disconnected, reason %d", T.reason)
@@ -64,7 +76,8 @@ eventmon.register(eventmon.STA_DISCONNECTED, function(T)
 			sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
 		end
 		wifi.setmode(wifi.STATION)
-		sta.config(ssid, passphrase, 1, bssid)
+--		sta.config(ssid, passphrase, 1, bssid)	-- deprecated
+		sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
 		did_reset = true
 	end
 end)

@@ -77,10 +77,11 @@ local function main()
 	if not do_WiFi then do_Save = false end
 
 -- select items included in the reported message
-	if nil == send_times  then send_times  = true end
-	if nil == send_reason then send_reason = true end
-	if nil == send_stats  then send_stats  = true end
-	if nil == send_radio  then send_radio  = true end
+	if nil == send_times  then send_times  = true  end
+	if nil == send_stats  then send_stats  = true  end
+	if nil == send_mem    then send_mem    = false end
+	if nil == send_reason then send_reason = true  end
+	if nil == send_radio  then send_radio  = true  end
 end
 
 if not abort then main() end
@@ -130,14 +131,15 @@ local function wifi_setup()
 	local ip = sta.getip()
 	if not ip or ip ~= clientIP then
 		Trace (1)
-		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
+		sta.setip({ip=clientIP, netmask=netMask, gateway=netGW})
 		Log ("static IP set to '%s'", clientIP)
 	end
 	local cssid = sta.getconfig()
 	if not cssid or cssid ~= ssid then
 		Trace (2)
 		wifi.setmode(wifi.STATION)
-		sta.config(ssid, passphrase, 1, bssid)
+--		sta.config(ssid, passphrase, 1, bssid)	-- deprecated
+		sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
 		Log ("AP set to '%s'", ssid)
 	end
 	sta.status()	-- rumoured to kick start WiFi connection
