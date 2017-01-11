@@ -1,30 +1,36 @@
 local tmr = tmr
-done_file (tmr.now())
+time_read = tmr.now()
+done_file (time_read)
 local mLog = mLog
 local function Log (...) if print_log then mLog ("read", unpack(arg)) end end
-local function Trace(n) mTrace(4, n) end Trace (0)
+local function Trace(n, new) mTrace(4, n, new) end Trace (0)
 used ()
 out_bleep()
 
 local function read_ds18b20()
-	if print_stats then Log("calling ds18b20") end
+	if print_dofile then Log("calling ds18b20") end
+	out_bleep()
 	start_dofile = tmr.now()
 	local t = require ("ds18b20")
+	if not t then
+		Log("required ds18b20 failed")
+		return false
+	end
 	local tm = tmr.now()
 	done_file (tm)
 	out_bleep()
 	time_read = time_read + (tm - start_dofile)	-- adjust time
 
 	if not t.setup (ow_pin) then
-		Log ("no ow on pin %d", ow_pin)
-		return
+		Log ("no ds18b20 ow on pin %d", ow_pin)
+		return false
 	end
 
 	if "" == ow_addr[1] then
 		ow_addr = t.addrs()
-		Log ("detected %d devices", #ow_addr)
+		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
-			return
+			return false
 		end
 	end
 
@@ -35,6 +41,7 @@ local function read_ds18b20()
 		end
 		temp[#temp+1] = tC
 	end
+	return true
 end
 
 local function read_bme280()
@@ -47,7 +54,7 @@ local function read_bme280()
 		-- 0			Filter off
 	if nil == dev or 0 == dev then
 		Log ("bme280.init failed")
-		return
+		return false
 	end
 	Log ("found %s", ({"none","bme280", "bmp280"})[dev])
 
@@ -58,6 +65,7 @@ local function read_bme280()
 	if nil == T then
 		Log ("bme280.read failed")
 		T, P, H = 8500, 0, 0
+		return false
 	end
 	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d"):format(
 		T/100,  T%100,
@@ -67,13 +75,19 @@ local function read_bme280()
 	temp[#temp+1] = T/100
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
+	return true
 end
 
---[[
+--[[	--- save memory ---
 local function read_ds3231()
-	if print_stats then Log("calling ds3231") end
+	if print_dofile then Log("calling ds3231") end
+	out_bleep()
 	start_dofile = tmr.now()
 	local t = require ("ds3231")
+	if not t then
+		Log("required ds3231 failed")
+		return false
+	end
 	local tm = tmr.now()
 	done_file (tm)
 	out_bleep()
@@ -81,10 +95,13 @@ local function read_ds3231()
 
 	if not t.setup (i2c_SDA, i2c_SCL) then
 		Log ("ds3231 setup failed")
-	else
-		tmr.wdclr()
-		temp[#temp+1] = t.getTemp()
+		return false
 	end
+
+	tmr.wdclr()
+	temp[#temp+1] = t.getTemp()
+
+	return true
 end
 --]]
 
@@ -101,63 +118,66 @@ local function have_pin(pin, pin_name, device_name)
 end
 
 temp = {}
-time_read = tmr.now()
 
-if not read_device then read_device = "" end
-for device in string.gmatch(read_device, "[^,]+") do
-	Log ("reading '%s'", device)
-	if device == "ds18b20" then
-		if have_pin(ow_pin, "OW", device) then
-			if #ow_addr < 1 then
-				Log ("no ow devices listed for %s", device)
-			else
-				read_ds18b20()
+local function read()
+	if not read_device then read_device = "" end
+	for device in string.gmatch(read_device, "[^,]+") do
+		Log ("reading '%s'", device)
+		if device == "ds18b20" then
+			if have_pin(ow_pin, "OW", device) then
+				if #ow_addr < 1 then
+					Log ("no ow devices listed for %s", device)
+				else
+					read_ds18b20()	-- ignore failure
+				end
 			end
+			read_ds18b20 = nil
+			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
+			device = nil
 		end
-		read_ds18b20 = nil
-		t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
-		device = nil
-	end
-	if device == "bme280" then
-		if have_pin(i2c_SDA, "SDA", device) and
-		   have_pin(i2c_SCL, "SCL", device) then
-			read_bme280()
+		if device == "bme280" then
+			if have_pin(i2c_SDA, "SDA", device) and
+			   have_pin(i2c_SCL, "SCL", device) then
+				read_bme280()	-- ignore failure
+			end
+			read_bme280 = nil
+			device = nil
 		end
-		read_bme280 = nil
-		device = nil
-	end
---[[
-	if device == "ds3231" then
-		if have_pin(i2c_SDA, "SDA", device) and
-		   have_pin(i2c_SCL, "SCL", device) then
-			read_ds3231()
+--[[	--- save memory ---
+		if device == "ds3231" then
+			if have_pin(i2c_SDA, "SDA", device) and
+			   have_pin(i2c_SCL, "SCL", device) then
+				read_ds3231()	-- ignore failure
+			end
+			read_ds3231 = nil
+			ds3231, package.loaded["ds3231"] = nil, nil
+			device = nil
 		end
-		read_ds3231 = nil
-		ds3231, package.loaded["ds3231"] = nil, nil
-		device = nil
-	end
 --]]
-
-	if device then
-		local pgm = ("read-%s"):format(device)
-		if not pcall (function() do_file(pgm, true) end) then
-			Log ("missing or failing '%s'", pgm)
+		if device then
+			local pgm = ("read-%s"):format(device)
+			if not pcall (function() do_file(pgm, true) end) then
+				Log ("missing or failing '%s'", pgm)
+				-- ignore failure
+			end
+			device = nil
 		end
-		device = nil
 	end
+
+	time_read = tmr.now() - time_read
+
+	if print_log and #temp > 0 then
+		local tCs = ""
+		local tSep = ""
+		for n = 1,#temp do
+			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
+			tSep = ","
+		end
+		Log ("have Reading %s", tCs)
+	end
+
+	return true
 end
 
-time_read = tmr.now() - time_read
-
-if print_log and #temp > 0 then
-	local tCs = ""
-	local tSep = ""
-	for n = 1,#temp do
-		tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
-		tSep = ","
-	end
-	Log ("have Reading %s", tCs)
-end
-
-if not abort and do_WiFi then do_file ("wifi") end
+if read() and do_WiFi then do_file ("wifi") end
 

@@ -2,7 +2,7 @@ time_First = tmr.now()
 time_dofile = time_dofile + (time_First-start_dofile)
 local mLog = mLog
 local function Log (...) if print_log then mLog ("first", unpack(arg)) end end
-local function Trace(n) mTrace(6, n) end Trace (0)
+local function Trace(n, new) mTrace(6, n, new) end Trace (0)
 used ()
 out_bleep()
 
@@ -21,6 +21,7 @@ if "mqtt" == save_proto then
 			Log("mqtt first failed")
 			runCount = 1
 		end
+		Trace (1)
 		have_first()
 	end)
 	mqttClient:on ("connect", function(client)
@@ -32,9 +33,11 @@ if "mqtt" == save_proto then
 	mqttClient:on ("message", function(client, topic, data)
 		Log ("mqtt message")
 		if data ~= nil then
+			Trace (2)
 			-- expecting 'clientID runCount times=...'
 			runCount, n = string.gsub (data, " +[^ ]+ +(%d+) .*", "%1")
 		else
+			Trace (3)
 			runCount = 0	-- should not happen
 		end
 		runCount = runCount + 1
@@ -48,8 +51,12 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 	conn:on("disconnection", function(conn, data)
 		Log ("disconnected")
 
-		if not runCount then
+		if runCount then
+			Log ("unexpected disconnection, runCount=%d", runCount)
+			Trace (5)	-- should not happen
+		else
 			Log ("connection failed")
+			Trace (4)
 			runCount = 1
 		end
 
@@ -58,24 +65,30 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 
 	conn:on("receive", function(conn, data)
 		Log ("received '%s'", data)
+		Trace (9)
 
 		runCount = data + 1
 
 		tmr.wdclr()
-		conn:close()
+		conn:close()	-- not expecting "disconnection"
+		Trace (10)
+		have_first()
 	end)
 
 	conn:on("sent", function(conn)
 		Log ("sent")
+		Trace (8)
 	end)
 
 	conn:on("connection", function(conn)
 		Log ("connected")
+		Trace (7)
 
 		tmr.wdclr()
 		conn:send (("last/%s"):format(clientID))	-- request last runCount
 	end)
 
+	Trace (6)
 	tmr.wdclr()
 	conn:connect(savePort, saveServer)
 else

@@ -3,7 +3,7 @@ local time_Save = done_file (tmr.now())
 local mLog = mLog
 local sta = wifi.sta
 local function Log (...) if print_log then mLog ("save", unpack(arg)) end end
-local function Trace(n) mTrace(7, n) end Trace (0)
+local function Trace(n, new) mTrace(7, n, new) end Trace (0)
 used ()
 out_bleep()
 
@@ -14,9 +14,11 @@ local function format_message()
 		failSoft  = rtcmem.read32(rtca_failSoft)	-- count
 		failHard  = rtcmem.read32(rtca_failHard)	-- count
 		failRead  = rtcmem.read32(rtca_failRead)	-- count
+		-- data from prev cycle:
 		timeLast  = rtcmem.read32(rtca_lastTime)	-- us
 		timeTotal = rtcmem.read32(rtca_totalTime)	-- ms
 		timeLeft  = rtcmem.read32(rtca_timeLeft)	-- us
+		-- also last_trace
 	end
 
 	local command = 'store '
@@ -26,10 +28,7 @@ local function format_message()
 	if send_times then
 		time_Save = tmr.now() - time_Save
 		times = 
-(" times=L%.3f,l%.3f,T%d,s%.3f,u%.3f,r%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f"):format(
-			timeLast / 1000000,	-- from prev cycle
-			timeLeft / 1000000,	-- from prev cycle
-			timeTotal / 1000,	-- from prev cycle
+(" times=s%.3f,u%.3f,r%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f prev=L%.3f,l%.3f,T%d,t%x"):format(
 			time_start / 1000000,
 			time_setup / 1000000,
 			time_read / 1000000,
@@ -37,7 +36,12 @@ local function format_message()
 			time_First / 1000000,
 			time_Save / 1000000,
 			time_dofile / 1000000,
-			(tmr.now() - time_start) / 1000000)
+			(tmr.now() - time_start) / 1000000,
+			-- prev=
+			timeLast / 1000000,	-- from prev cycle
+			timeLeft / 1000000,	-- from prev cycle
+			timeTotal / 1000,	-- from prev cycle
+			(last_trace or 0xffffffff))
 		if nil ~= rtc_start_s then
 			times = ("%s,R%d.%06d"):format(
 				times,
@@ -50,6 +54,12 @@ local function format_message()
 		local reasons = ""
 		if send_reason then
 --[[
+code:
+    1 power-on
+    2 reset (software?)
+    3 hardware reset via reset pin
+    4 WDT reset (watchdog timeout)
+
 struct rst_info* ri = system_get_rst_info();
 struct rst_info {
 	uint32 reason; // enum rst_reason
@@ -89,11 +99,10 @@ reason = ri.reason;
 				mh)
 		end
 
-		stats = (" stats=fs%d,fh%d,fr%d,t%x%s%s"):format(
+		stats = (" stats=fs%d,fh%d,fr%d%s%s"):format(
 			failSoft,
 			failHard,
 			failRead,
-			(last_trace or 0xffffffff),
 			reasons,
 			mems)
 	end
@@ -106,9 +115,9 @@ reason = ri.reason;
 
 	if not weather then weather = "" end
 
-	if adc_factor then	-- no vdd with adc anymore
+	if adc_factor then	-- cannot read vdd with adc anymore
 		vbat = adc.read(0)*adc_factor
-		vdd33 = 3300			-- dummy
+		vdd33 = rtcmem.read32(rtca_vddLastRead)
 	else
 		vbat = 0			-- dummy
 		vdd33 = adc.readvdd33()*vdd_factor
@@ -149,19 +158,25 @@ message = format_message()
 format_message = nil
 
 if not do_Save then
+	Trace(1)
 	print_log = true
 	Log (message)
 	message = nil
 	doSleep()
 elseif "udp" == save_proto then
+	Trace(2)
 	do_file("save-udp")
 elseif "tcp" == save_proto then
+	Trace(3)
 	do_file("save-tcp")
 elseif "mqtt" == save_proto then
+	Trace(4)
 	do_file("save-mqtt")
 else
+	Trace(5)
 	pgm = ("save-%s"):format(save_proto)
 	if not pcall (function() do_file(pgm, true) end) then
+		Trace(6)
 		Log ("missing or failing '%s'", pgm)
 		Log ("message='%s'", message)
 		message = nil
