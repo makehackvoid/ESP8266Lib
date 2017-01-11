@@ -1,6 +1,8 @@
 An example of reading temperature from a ds18b20 and submitting to a server
 ------------
 
+Note: you need a recent `dev` branch (SDK 2.0.0) for this app.
+
 It can also read the `bme280` and more.
 
 This application reports more than just the temperature as it is used as a test program. It can also print a progress log. It has a few options that are only there for testing.
