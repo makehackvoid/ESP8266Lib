@@ -11,7 +11,8 @@ die() {
 
 compile() {
 	p="$1"
-#	echo "compiling '$p'"
+	$verbose && \
+		echo "compiling '$p'"
 	luac.cross $ccflags -o "$p".{lc,lua} || {
 		echod "compile of '$p' failed $?"
 		rc='true'
@@ -20,8 +21,25 @@ compile() {
 
 me="`basename $0 .sh`"
 
- ccflags='-s'
-#ccflags=''
+ccflags=''
+verbose='false'
+while test -n "$1" ; do
+	case "$1" in
+	-s)
+		ccflags='-s'
+		;;
+	-v)
+		verbose='true'
+		;;
+	-*)
+		die "bad option '$1'"
+		;;
+	*)
+		die "unknown argument '$1'"
+		;;
+	esac
+	shift
+done
 
 rc='false'
 for f in *.lua ; do
@@ -32,14 +50,20 @@ for f in *.lua ; do
 #	pgm="`basename "$f" .lua"	# remove '.lua' suffix
 	pgm="${f:0:0-4}"		# remove '.lua' suffix
 	case "$pgm" in
-	i|init|compile)
+	i|i?|init|compile)
 		continue
 		;;
 	main)
-		sed "s|#VERSION#|`date '+%F %T'` `hostname -s`:`pwd`|" "$f" >"ver_$f"
-# DOS format:	sed "s|#VERSION#|`date '+%Y%m%d%H%M%S'` `hostname -s`:`pwd`|" "$f" >"ver_$f"
+		ver="ver_$f"
+		sed "s|#VERSION#|`date '+%F %T'` `hostname -s`:`pwd`|" "$f" >"$ver"
+# DOS format:	sed "s|#VERSION#|`date '+%Y%m%d%H%M%S'` `hostname -s`:`pwd`|" "$f" >"$ver"
+		config='/eyal/ej.netrc'
+		test -f "$config" || \
+			die "missing config file '$config'"
+		read url ssid pass <"$config"
+		sed -i "s/#SSID#/$ssid/;s/#PASS#/$pass/" "$ver"
 		compile "ver_$pgm"
-		rm "ver_$f"
+		rm "$ver"
 		mv {ver_,}"$pgm.lc"
 		continue
 		;;

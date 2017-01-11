@@ -4,11 +4,10 @@
 -- Much modified, fixed and enhanced 2015 by Eyal Lebedinsky
 
 local server, port, url = nil, 80, "/upload"
-local filelist
 local i = 0
 
 function summary()
-	print("fetched "..i.." files")
+	print(("fetched %d files"):format(i))
 
 	local free, used, size = file.fsinfo()
 	print(("File system info:\n\tSize %7d Bytes\n\tUsed %7d Bytes\n\tFree %7d Bytes"):
@@ -24,62 +23,73 @@ function summary()
 	print (("Total %d files, %d bytes"):format(nf, nb))
 end
 
-function getfile()
-	local path, size, payloadFound
+local busy = false
+local verbose = false
+
+function getfile(path)
+	local size, payloadFound, csize
 
 	local conn = net.createConnection(net.TCP, 0)
 
 	conn:on("connection", function(conn, payload)
-		i = i + 1
-		path = table.remove(filelist, 1)
---		print(("%2d %25s"):format(i, path))
+		if verbose then
+			print(("%2d '%25s'"):format(i, path))
+		end
 		file.remove(path)
 		file.open(path, "w+")
 		size = 0
 		payloadFound = false
 
-		conn:send("GET "..url.."/"..path.." HTTP/1.0\r\n"..
-			"Host: "..host.."\r\n"..
-			"Connection: close\r\n"..
-			"Accept-Charset: utf-8\r\n"..
-			"Accept-Encoding: \r\n"..
-			"User-Agent: Mozilla/4.0 (compatible; esp8266 Lua; Windows NT 5.1)\r\n".. 
-			"Accept: */*\r\n\r\n")
+		conn:send(("GET %s/%s HTTP/1.0\r\n Host: %s\r\nConnection: close\r\nAccept-Charset: utf-8\r\nAccept-Encoding: \r\nUser-Agent: Mozilla/4.0 (compatible; esp8266 Lua; Windows NT 5.1)\r\nAccept: */*\r\n\r\n"):
+			format(url, path, host))
 	end)
 	conn:on("receive", function(conn, payload)
+		local psize = 0
 		if (payloadFound) then
 			file.write(payload)
 			file.flush()
-			size = size + #payload
+			psize = #payload
+			size = size + psize
 		else
 			local payloadOffset = string.find(payload, "\r\n\r\n")
 			if (payloadOffset) then
+				csize, n = string.gsub (payload, ".*Content[-]Length: (%d+).*", "%1")
+				if 0 == n then
+					print ("no Content-Length")
+					csize = 0
+				end
+				if verbose then
+					print(string.sub(payload, 1, payloadOffset + 3))
+				end
 				file.write(string.sub(payload, payloadOffset + 4))
 				file.flush()
-				size = #payload - (payloadOffset + 3)
+				psize = #payload - (payloadOffset + 3)
+				size = psize
 				payloadFound = true
 			end
 		end
-
+		if verbose then
+			print(("    psize=%4d size=%4d"):format(psize, size))
+		end
 		payload = nil
 		collectgarbage()
 	end)
 	conn:on("disconnection", function(conn) 
 		file.close()
-		conn:close()
 		conn = nil
 		if (path) then
-			print(("%2d %25s %5d"):format(i, path, size))	-- prev file
+			local comment = ""
+			if 0+csize ~= size then
+				comment = (" expected size %5d"):format(csize)
+			end
+			print(("%2d %25s %5d%s"):format(i, path, size, comment)) -- prev file
 		else
 			print ("failed to connect, retrying")
 		end
-		path, size = nil, nil
+		size, payloadFound = nil, nil
+		collectgarbage()
 
-		if #filelist > 0 then
-			getfile ()	-- fetch next file
-		else
-			summary()
-		end
+		busy = false
 	end)
 
 	conn:connect(port, host)
@@ -90,8 +100,6 @@ function download(list, dir)
 		print("no files requested")
 		return
 	end
-
-	filelist = list
 
 	local ip, mask, gw = wifi.sta.getip()
 	if not ip then
@@ -108,13 +116,23 @@ function download(list, dir)
 	url = dir and dir or (URL and URL or url)
 
 	print (("Copying %d files from http://%s:%d%s to the esp"):
-		format(#filelist, server, port, url))
+		format(#list, server, port, url))
 
-	getfile ()
+	tmr.alarm(1, 10, 1, function()
+		if (busy) then return end
+		if i < #list then
+			busy = true
+			i = i + 1
+			getfile (list[i])
+		else
+			tmr.stop(1)
+			summary()
+		end
+	end)
 end
 
 function my_esp_config()
-	local mac = string.gsub(string.upper(wifi.sta.getmac()),":","-")
-	return 'esp-' .. mac .. '.lc'
+	return ("esp-%s.lc"):format(string.gsub(string.upper(wifi.sta.getmac()),":","-"))
 end
+local esp = my_esp_config()
 

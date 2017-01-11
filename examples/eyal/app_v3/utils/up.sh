@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# 21 Aug 16 EL Remove empty lines
+
 echod() {
         echo "`date '+%F %T'` $me: $@"
 }
@@ -27,5 +29,15 @@ tgt="$2"
 test -n "$tgt" || \
 	tgt="`basename "$src"`"
 
-python "$dir/luatool.py" -p /dev/ttyUSB0 -f "$src" -t "$tgt" $opts
+ opts='--baud 115200'
+#opts='--baud 9600'
+test -n "$BAUD" && \
+	opts="--baud $BAUD"
 
+tmp="$src.tmp"
+echod "tmp='$tmp'"
+# remove empty lines
+sed '/^\r/d;/^--[ \t]/d' "$src" >"$tmp"
+
+python "$dir/luatool.py" -p /dev/ttyUSB0 $opts -f "$tmp" -t "$tgt" $opts
+rm -f "$tmp"

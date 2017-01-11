@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# 21 Aug 16 EL Remove empty lines from *.lua
+# 20 Dec 16 EL Upload larger files first
+#	EL Add 'files.txt'
+
 echod() {
 	echo "`date '+%F %T'` $me: $@"
 }
@@ -11,11 +15,15 @@ die() {
 
 compile () {
 	f="$1"
-	luac.cross -s -o "${f/.lua/.lc}" "$f"
+	luac.cross $ccflags -o "${f/.lua/.lc}" "$f" || \
+		die "compiling '$f.lua' failed"
 }
 
 me="`basename $0 .sh`"
 dir="`dirname "$0"`"
+
+#ccflags='-s'	# strip
+ ccflags=''
 
 tmpname="$me-$$.lua"
 tmp="$HOME/tmp/$tmpname"
@@ -23,6 +31,9 @@ tmp="$HOME/tmp/$tmpname"
 here="`readlink -f '.'`"
 there="`readlink -f '/www/upload'`"
 upfile="$there/u.lua"
+srclist="$there/files.txt"
+
+echod "source files used:" >"$srclist"
 
 test "$here" = "$there" && copy='false' || copy='true'
 
@@ -41,11 +52,19 @@ test -n "$mac" || mac='*'
 	cat "$dir/upload.lua"
 
 	echo -n 'download ({'
-	n=0
-	col=0
-	for file in i.lua *.lc ; do
+	tmp=''
+	uplist=''
+	for file in i?.lua *.lc ; do
 		test -f "$file" || continue
+		tmp=''
 		case "$file" in
+		*.lua)
+			ls -l "$file" >>"$srclist"
+			$copy && {
+				tmp="$file.tmp"
+				sed '/^\r/d;/^--[ \t]/d' "$file" >"$tmp"
+			}
+			;;
 		esp-test.*)
 			upthis='true'	# copy+upload
 			;;
@@ -63,24 +82,35 @@ test -n "$mac" || mac='*'
 			;;
 		esac
 
-		$upthis && {
-			col=$((col+1))
-			test $col -gt 5 && {
-				col=1
-				echo ""
-			}
-			n=$((n+1))
-			echo -n "'$file',"
+		$copy && {
+			ls -l "${file/.lc/.lua}" >>"$srclist"
+			if test -n "$tmp" ; then
+				mv "$tmp" "$there/$file"
+			else
+				cp -a "$file" "$there"
+			fi
+			chmod 666 "$there/$file"
 		}
 
-		$copy && \
-			cp -a "$file" "$there"
+		$upthis && {
+			uplist="$uplist $file"
+		}
 	done
-	echo -n "my_esp_config(),"	# will upload correct "esp-MAC.lc"
+#	uplist="$uplist files.txt"
+	col=0
+	for file in `(cd "$there" ; ls -S $uplist)` ; do
+		col=$((col+1))
+		test $col -gt 5 && {
+			col=1
+			echo ""
+		}
+		echo -n "'$file',"
+	done
+#	echo -n "my_esp_config()"	# will upload correct "esp-MAC.lc"
+	echo -n "esp"			# will upload correct "esp-MAC.lc"
 	echo '}, "/upload")'
 } >"$upfile"
 compile "$upfile"
 
 $upit && \
 	"$dir/up.sh" --dofile "$dir/bootstrap.lua"
-
