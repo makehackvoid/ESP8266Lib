@@ -2,7 +2,6 @@
 time_start = tmr.now()
 --mem_used, mem_heap = collectgarbage("count")*1024, node.heap()
 node.setcpufreq(node.CPU160MHZ)	-- do this asap
-last_trace = nil	-- not yet set
 -- do not change above this line --
 --	saveServer = "192.168.2.7"	-- send messages to this server
 	savePort = 21883		-- send messages to this port
@@ -14,8 +13,6 @@ last_trace = nil	-- not yet set
 --	print_usage = true		-- print memory usage stats
 --	send_mem = true			-- include mem_used and mem_heap in message
 -- do not change below this line --
-time_dofile = 0
-start_dofile = time_start
 if pcall (function() dofile("funcs.lc", true) end) then
 	function Log (...) mLog ("init", unpack(arg)) end
 	local function Trace(n) mTrace(2, n) end Trace (0)
