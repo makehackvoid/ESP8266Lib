@@ -16,10 +16,8 @@ last_trace = nil	-- not yet set
 -- do not change below this line --
 time_dofile = 0
 start_dofile = time_start
-if not pcall (function() dofile("funcs.lc", true) end) then
-	print("missing funcs.lc")
-else
+if pcall (function() dofile("funcs.lc", true) end) then
 	function Log (...) mLog ("init", unpack(arg)) end
 	local function Trace(n) mTrace(2, n) end Trace (0)
 	do_file ("main")
-end
+else print("missing or failing funcs.lc") end
