@@ -3,7 +3,7 @@ time_read = tmr.now()
 done_file (time_read)
 local mLog = mLog
 local function Log (...) if print_log then mLog ("read", unpack(arg)) end end
-local function Trace(n, new) mTrace(4, n, new) end Trace (0)
+local function Trace(n, new) mTrace(4, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
@@ -64,8 +64,8 @@ local function read_bme280()
 		-- 622	sensor location altitude in meters
 	if nil == T then
 		Log ("bme280.read failed")
-		T, P, H = 8500, 0, 0
-		return false
+		T, P, H = 85*100, 1000*1000, 0*1000
+--		return false
 	end
 	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d"):format(
 		T/100,  T%100,
@@ -93,15 +93,19 @@ local function read_ds3231()
 	out_bleep()
 	time_read = time_read + (tm - start_dofile)	-- adjust time
 
-	if not t.setup (i2c_SDA, i2c_SCL) then
+	local ret
+	if t.setup (i2c_SDA, i2c_SCL) then
+		tmr.wdclr()
+		temp[#temp+1] = t.getTemp()
+		ret = true
+	else
 		Log ("ds3231 setup failed")
-		return false
+		ret = false
 	end
 
-	tmr.wdclr()
-	temp[#temp+1] = t.getTemp()
+	ds3231, package.loaded["ds3231"] = nil, nil
 
-	return true
+	return ret
 end
 --]]
 
@@ -117,9 +121,14 @@ local function have_pin(pin, pin_name, device_name)
 	return true
 end
 
+local function have_i2c(device_name)
+	return have_pin(i2c_SDA, "SDA", device_name) and
+	   have_pin(i2c_SCL, "SCL", device_name)
+end
+
 temp = {}
 
-local function read()
+local function doread()
 	if not read_device then read_device = "" end
 	for device in string.gmatch(read_device, "[^,]+") do
 		Log ("reading '%s'", device)
@@ -136,24 +145,22 @@ local function read()
 			device = nil
 		end
 		if device == "bme280" then
-			if have_pin(i2c_SDA, "SDA", device) and
-			   have_pin(i2c_SCL, "SCL", device) then
+			if have_i2c(device) then
 				read_bme280()	-- ignore failure
 			end
 			read_bme280 = nil
 			device = nil
 		end
---[[	--- save memory ---
 		if device == "ds3231" then
-			if have_pin(i2c_SDA, "SDA", device) and
-			   have_pin(i2c_SCL, "SCL", device) then
+			Log ("%s is disabled", device)
+--[[	--- save memory ---
+			if have_i2c(device) then
 				read_ds3231()	-- ignore failure
 			end
 			read_ds3231 = nil
-			ds3231, package.loaded["ds3231"] = nil, nil
+--]]
 			device = nil
 		end
---]]
 		if device then
 			local pgm = ("read-%s"):format(device)
 			if not pcall (function() do_file(pgm, true) end) then
@@ -176,8 +183,8 @@ local function read()
 		Log ("have Reading %s", tCs)
 	end
 
-	return true
+	if do_WiFi then do_file ("wifi") end
 end
 
-if read() and do_WiFi then do_file ("wifi") end
+doread()
 

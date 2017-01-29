@@ -23,32 +23,51 @@ done_file (tmr.now())
 --abort = false
 last_trace = nil
 prev_module = 0
-prev_trace = 0
-this_trace = 0
+prev_trace_h, prev_trace_l = 0, 0
+last_trace_h, last_trace_l = 0xffffffff, 0xffffffff
+this_trace_h, this_trace_l = 0, 0
 
 function mTrace(mod, n, new)
 	if nil ~= rtcmem then
-		if not rtca_tracePoint then
-			rtca_tracePoint = 127 - 8	-- see funcs.lua!
+		if not rtca_tracePointH then
+			rtca_tracePointH = 127 - 8	-- see main.lua!
+			rtca_tracePointL = rtca_tracePointH - 1
 		end
-		if not last_trace then			-- first call
-			last_trace = rtcmem.read32(rtca_tracePoint)
+		if 0xffffffff == last_trace_h then	-- first call
+			last_trace_h = rtcmem.read32(rtca_tracePointH)
+--			if last_trace_h < 0 then
+--				last_trace_h = 0x10000000*16+last_trace_h
+--			end
+			last_trace_l = rtcmem.read32(rtca_tracePointL)
+--			if last_trace_l < 0 then
+--				last_trace_l = 0x10000000*16+last_trace_l
+--			end
+--print(("%x%08x"):format(last_trace_h, last_trace_l))
 		end
 		if new or mod ~= prev_module then
-			prev_trace = this_trace/0x100
+			local h = this_trace_h%0x100	-- low two digits
+			prev_trace_h = (this_trace_h-h)/0x100
+			local l = this_trace_l%0x100
+			prev_trace_l = h*0x1000000 + (this_trace_l-l)/0x100
 		-- else use last prev_trace
 		end
 		prev_module = mod
-		local t = this_trace
-		this_trace = prev_trace + (mod*0x10 + n)*0x1000000
+		local t_h, t_l = this_trace_h, this_trace_l
+		this_trace_h = prev_trace_h + (mod*0x10 + n)*0x1000000
+		this_trace_l = prev_trace_l
 		if print_trace then
-			Log("mTrace(%x, %x%s) %08x -> %08x",
-				mod, n, (new and ", true" or ""), t, this_trace)
+			Log("mTrace(%x, %x%s) %08x%08x -> %08x%08x",
+				mod, n, (new and ", true" or ""),
+				t_h, t_l, this_trace_h, this_trace_l)
 		end
-		rtcmem.write32(rtca_tracePoint, this_trace)
+		rtcmem.write32(rtca_tracePointH, this_trace_h)
+		rtcmem.write32(rtca_tracePointL, this_trace_l)
 	end
 end
-local function Trace(n, new) mTrace(1, n, new) end Trace (0)
+local function Trace(n, new) mTrace(1, n, new) end Trace (0, true)
+
+-- this makes mo difference in this app:
+-- node.egc.setmode(node.egc.ON_ALLOC_FAILURE)	-- default is ALWAYS
 
 function used ()
 	if print_stats then
@@ -58,20 +77,15 @@ function used ()
 end
 
 function do_file(fname, fg)
---	if  abort then
---		Log("aborting, not doing '%s'", fname)
---		return
---	end
-
 	local fullName = ("%s%s"):format(fname, (lua_type or ".lc"))
 	if print_dofile then
-		Log("calling %s", fullName)
+		Log("dofile call %s", fullName)
 	end
 	if fg then
 		start_dofile = tmr.now()
 		dofile (fullName)
 	else
-		tmr.alarm(1, 1, 0, function()
+		tmr.alarm(1, 1, tmr.ALARM_SINGLE, function()
 			tmr.stop(1)
 			start_dofile = tmr.now()
 			dofile (fullName)
@@ -107,7 +121,7 @@ local do_vdd_read_cycle = false
 
 function safe_dsleep(us, mode)
 	if print_log then
-		tmr.alarm(4, 5, 0, function()
+		tmr.alarm(4, 5, tmr.ALARM_SINGLE, function()
 			dsleep (us, mode)
 		end)
 	else
@@ -193,7 +207,7 @@ function restart(time_left)
 	end
 
 	if t_delay >= 1 then
-		tmr.alarm(3, t_delay, 0, function()
+		tmr.alarm(3, t_delay, tmr.ALARM_SINGLE, function()
 			restart_really(time_left)
 		end)
 	else
@@ -225,7 +239,7 @@ function doSleep ()
 			restart (0)
 		else
 			Log("restart in %gs", time_left/1000)
-			tmr.alarm(2, time_left, 0, function()
+			tmr.alarm(2, time_left, tmr.ALARM_SINGLE, function()
 				tmr.stop(2)
 				Trace(4, true)
 				restart (0)

@@ -3,7 +3,7 @@ local time_Save = done_file (tmr.now())
 local mLog = mLog
 local sta = wifi.sta
 local function Log (...) if print_log then mLog ("save", unpack(arg)) end end
-local function Trace(n, new) mTrace(7, n, new) end Trace (0)
+local function Trace(n, new) mTrace(7, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
@@ -28,7 +28,7 @@ local function format_message()
 	if send_times then
 		time_Save = tmr.now() - time_Save
 		times = 
-(" times=s%.3f,u%.3f,r%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f prev=L%.3f,l%.3f,T%d,t%x"):format(
+(" times=s%.3f,u%.3f,r%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f prev=L%.3f,l%.3f,T%d,t%x%08x"):format(
 			time_start / 1000000,
 			time_setup / 1000000,
 			time_read / 1000000,
@@ -41,7 +41,7 @@ local function format_message()
 			timeLast / 1000000,	-- from prev cycle
 			timeLeft / 1000000,	-- from prev cycle
 			timeTotal / 1000,	-- from prev cycle
-			(last_trace or 0xffffffff))
+			last_trace_h, last_trace_l)
 		if nil ~= rtc_start_s then
 			times = ("%s,R%d.%06d"):format(
 				times,
@@ -183,3 +183,4 @@ else
 		doSleep()
 	end
 end
+

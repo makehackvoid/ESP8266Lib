@@ -3,7 +3,9 @@ local start_time = tmr.now()
 local eventmon = wifi.eventmon
 local stop = 1	-- gpio5, D1
 local time_set_ip = start_time
+local time_registered = start_time
 local time_connected = start_time
+local time_got_ip = start_time
 local start_status = wifi.sta.status()
 local connected_status = -1
 
@@ -12,7 +14,9 @@ local function msg(t, reason)
 	print (("connected status %d"):format(connected_status))
 	print (("end       status %d"):format(wifi.sta.status()))
 	print (("%8.3fms %s"):format((time_set_ip-start_time)/1000, "set IP"))
+	print (("%8.3fms %s"):format((time_registered-start_time)/1000, "registered"))
 	print (("%8.3fms %s"):format((time_connected-start_time)/1000, "connected"))
+	print (("%8.3fms %s"):format((time_got_ip-start_time)/1000, "got ip"))
 	print (("%8.3fms %s"):format((t-start_time)/1000, reason))
 	eventmon.unregister(eventmon.STA_CONNECTED)
 	eventmon.unregister(eventmon.STA_GOT_IP)
@@ -31,17 +35,20 @@ local function test()
 
 	local t = 0
 
+	time_registered = tmr.now()
 	eventmon.register(eventmon.STA_GOT_IP, function(T)
-		t = tmr.now() msg(t, "GOT_IP") end)
+		time_got_ip = tmr.now() msg(t, "GOT_IP") end)
 	eventmon.register(eventmon.STA_CONNECTED, function(T)
 		time_connected = tmr.now() connected_status = wifi.sta.status() end)
 	eventmon.register(eventmon.STA_DISCONNECTED, function(T)
 		t = tmr.now() msg(t, "DISCONNECTED") end)
 
+--[[
 	tmr.alarm(1, 20, 0, function()	-- set IP before connection
 		wifi.sta.setip({ip="192.168.2.47",netmask="255.255.255.0",gateway="192.168.2.7"})
 		time_set_ip = tmr.now()
 	end)
+--]]
 
 	tmr.alarm(2, 2*1000, 0, function()	-- 2s timeout
 		msg(tmr.now(), "Timeout")

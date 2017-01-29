@@ -10,6 +10,10 @@ local function show_esp()
 end
 
 local function show_ow()
+	if not ow then
+		print("no ow fw module")
+		return
+	end
 	local t = require ("ds18b20")
 	if not t then
 		print("no ds18b20 module")
@@ -17,7 +21,7 @@ local function show_ow()
 	end
 
 	local ow_pin = ow_pin or gpio4
-	print("using pin " .. ow_pin)
+	print("using ow pin " .. ow_pin)
 
 	t.setup(ow_pin)
 	local addrs = t.addrs()

@@ -1,7 +1,7 @@
 local mLog = mLog
 local function Log (...) if print_log then mLog ("main", unpack(arg)) end end
 time_setup = done_file (tmr.now())
-local function Trace(n, new) mTrace(3, n, new) end Trace (0)
+local function Trace(n, new) mTrace(3, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
@@ -15,7 +15,7 @@ local function setup_rtcmem()
 		newRun = true	-- always fetch runCount from server
 		return true
 	end
-	rtc_magic        = rtc_magic        or 0x6ada6ad0	-- keep below 0x80000000
+	rtc_magic        = rtc_magic        or 0x6adadada	-- keep below 0x80000000
 	rtca_magic       = rtca_magic       or 127		-- last slot
 	rtca_runCount    = rtca_runCount    or (rtca_magic - 1)
 	rtca_failSoft    = rtca_failSoft    or (rtca_magic - 2)
@@ -24,10 +24,11 @@ local function setup_rtcmem()
 	rtca_lastTime    = rtca_lastTime    or (rtca_magic - 5)
 	rtca_totalTime   = rtca_totalTime   or (rtca_magic - 6)
 	rtca_timeLeft    = rtca_timeLeft    or (rtca_magic - 7)
-	rtca_tracePoint  = rtca_tracePoint  or (rtca_magic - 8)
-	rtca_vddNextTime = rtca_vddNextTime or (rtca_magic - 9)	-- us to next vdd read
-	rtca_vddLastRead = rtca_vddLastRead or (rtca_magic - 10)
-	rtca_vddAdjTime  = rtca_vddAdjTime  or (rtca_magic - 11)
+	rtca_tracePointH = rtca_tracePointH or (rtca_magic - 8)
+	rtca_tracePointL = rtca_tracePointL or (rtca_magic - 9)
+	rtca_vddNextTime = rtca_vddNextTime or (rtca_magic - 10)	-- us to next vdd read
+	rtca_vddLastRead = rtca_vddLastRead or (rtca_magic - 11)
+	rtca_vddAdjTime  = rtca_vddAdjTime  or (rtca_magic - 12)
 
 	newRun = rtc_magic ~= rtcmem.read32(rtca_magic)
 	if newRun then
@@ -38,7 +39,8 @@ local function setup_rtcmem()
 		rtcmem.write32(rtca_lastTime, 0)
 		rtcmem.write32(rtca_totalTime, 0)
 		rtcmem.write32(rtca_timeLeft, 0)
-		rtcmem.write32(rtca_tracePoint, 0xffffffff)
+		rtcmem.write32(rtca_tracePointH, 0xffffffff)
+		rtcmem.write32(rtca_tracePointL, 0xffffffff)
 		rtcmem.write32(rtca_vddNextTime, vddNextTime)
 		rtcmem.write32(rtca_vddLastRead, 3300)
 		rtcmem.write32(rtca_vddAdjTime, 0)
@@ -135,7 +137,7 @@ local function wifi_setup()
 	return true
 end
 
-local function main()
+local function domain()
 	Log ("version #VERSION#")	-- will become: DATETIME DIR
 
 -- how to execute lua programs?
@@ -241,6 +243,7 @@ local function main()
 	if adc.force_init_mode(adc_mode) then
 		Log ("restart to change adc_mode")
 		safe_dsleep (1, 0)
+		return false
 	end
 
 -- if you want to restart counting then set the new staring value
@@ -261,9 +264,12 @@ local function main()
 	if not wifi_setup() then return false end
 
 	time_setup = tmr.now() - time_setup
+
 	return true
 end
 
-if main() then
+if domain() then
+	domain = nil
 	do_file ("read")
 end
+

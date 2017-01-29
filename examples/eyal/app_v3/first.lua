@@ -2,7 +2,7 @@ time_First = tmr.now()
 time_dofile = time_dofile + (time_First-start_dofile)
 local mLog = mLog
 local function Log (...) if print_log then mLog ("first", unpack(arg)) end end
-local function Trace(n, new) mTrace(6, n, new) end Trace (0)
+local function Trace(n, new) mTrace(6, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
@@ -42,13 +42,14 @@ if "mqtt" == save_proto then
 		end
 		runCount = runCount + 1
 		client:close()
+		mqtt_client  = nil
 		have_first()
 	end)
 	mqttClient:connect (saveServer, savePort, 0)
 elseif "tcp" == save_proto or "udp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)
 
-	conn:on("disconnection", function(conn, data)
+	conn:on("disconnection", function(client, data)
 		Log ("disconnected")
 
 		if runCount then
@@ -60,32 +61,34 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 			runCount = 1
 		end
 
+		conn  = nil
 		have_first()
 	end)
 
-	conn:on("receive", function(conn, data)
+	conn:on("receive", function(client, data)
 		Log ("received '%s'", data)
 		Trace (9)
 
 		runCount = data + 1
 
 		tmr.wdclr()
-		conn:close()	-- not expecting "disconnection"
+		client:close()	-- not expecting "disconnection"
+		conn  = nil
 		Trace (10)
 		have_first()
 	end)
 
-	conn:on("sent", function(conn)
+	conn:on("sent", function(client)
 		Log ("sent")
 		Trace (8)
 	end)
 
-	conn:on("connection", function(conn)
+	conn:on("connection", function(client)
 		Log ("connected")
 		Trace (7)
 
 		tmr.wdclr()
-		conn:send (("last/%s"):format(clientID))	-- request last runCount
+		client:send (("last/%s"):format(clientID))	-- request last runCount
 	end)
 
 	Trace (6)

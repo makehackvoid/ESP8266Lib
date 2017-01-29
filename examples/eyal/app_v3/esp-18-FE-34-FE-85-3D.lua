@@ -15,7 +15,7 @@ clientIP      = clientIP      or (network .. "36")
 
 magic_pin     = magic_pin     or gpio5
 sleep_time    = sleep_time    or 60
-rtc_rate      = rtc_rate      or 1.024	-- empirical for 1m
+rtc_rate      = rtc_rate      or 1.024	-- empirical for 1m, rate is now 60.17s
 vdd_factor    = vdd_factor    or 1.015	-- empirical
 read_device   = read_device   or "ds18b20"
 ow_pin        = ow_pin        or gpio4
