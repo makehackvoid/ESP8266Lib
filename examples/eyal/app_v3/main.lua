@@ -15,7 +15,7 @@ local function setup_rtcmem()
 		newRun = true	-- always fetch runCount from server
 		return true
 	end
-	rtc_magic        = rtc_magic        or 0x6adadada	-- keep below 0x80000000
+	rtc_magic        = rtc_magic        or 0x6adadad0	-- keep below 0x80000000
 	rtca_magic       = rtca_magic       or 127		-- last slot
 	rtca_runCount    = rtca_runCount    or (rtca_magic - 1)
 	rtca_failSoft    = rtca_failSoft    or (rtca_magic - 2)
@@ -26,7 +26,7 @@ local function setup_rtcmem()
 	rtca_timeLeft    = rtca_timeLeft    or (rtca_magic - 7)
 	rtca_tracePointH = rtca_tracePointH or (rtca_magic - 8)
 	rtca_tracePointL = rtca_tracePointL or (rtca_magic - 9)
-	rtca_vddNextTime = rtca_vddNextTime or (rtca_magic - 10)	-- us to next vdd read
+	rtca_vddNextTime = rtca_vddNextTime or (rtca_magic - 10)	-- ms to next vdd read
 	rtca_vddLastRead = rtca_vddLastRead or (rtca_magic - 11)
 	rtca_vddAdjTime  = rtca_vddAdjTime  or (rtca_magic - 12)
 
@@ -41,6 +41,7 @@ local function setup_rtcmem()
 		rtcmem.write32(rtca_timeLeft, 0)
 		rtcmem.write32(rtca_tracePointH, 0xffffffff)
 		rtcmem.write32(rtca_tracePointL, 0xffffffff)
+		last_trace_h, last_trace_l = 0xffffffff, 0xffffffff
 		rtcmem.write32(rtca_vddNextTime, vddNextTime)
 		rtcmem.write32(rtca_vddLastRead, 3300)
 		rtcmem.write32(rtca_vddAdjTime, 0)
@@ -103,10 +104,18 @@ local function wifi_setup()
 	netMask    = netMask    or "255.255.255.0"
 
 -- what protocol to use to send the reading?
-	save_proto = save_proto or "udp"	-- "udp" or "tcp"
+	save_proto = save_proto or "udp"	-- "udp", "tcp" or "mqtt"
+
+-- how many ms to wait before aborting a wifi operation
+	wifi_timeout  =  wifi_timeout  or 5000	-- waiting for wifi
+	first_timeout =  first_timeout or 4000	-- waiting for 'first' response
+	save_udp_timeout   =  save_udp_timeout   or 5000
+	save_tcp_timeout   =  save_tcp_timeout   or 5000
+	save_mqtt_timeout  =  save_mqtt_timeout  or 5000
+
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
 	if "udp" == save_proto then
-		udp_grace_ms = udp_grace_ms or 30
+		udp_grace_ms = udp_grace_ms or 40
 	else
 		udp_grace_ms = 0
 	end
@@ -148,7 +157,11 @@ local function domain()
 	if nil == clientID then
 		local mac = "esp-" .. string.gsub(string.upper(sta.getmac()),":","-")
 		ret, magic = pcall (function() do_file(mac, true) end)
-		if not ret then
+		if ret then
+			if nil == clientID then
+				magic = true
+			end
+		else
 			Log ("missing or failing setup file '%s', using default", mac)
 			mac = "esp-test"
 			ret, magic = pcall (function() do_file(mac, true) end)
@@ -159,7 +172,7 @@ local function domain()
 		end
 	end
 
-	if magic_pin and magic_pin >= 0 then
+	if not magic and magic_pin and magic_pin >= 0 then
 		gpio.mode (magic_pin, gpio.INPUT, gpio.PULLUP)
 		if 0 == gpio.read (magic_pin) then
 			magic = true
@@ -180,52 +193,49 @@ local function domain()
 	if not setup_rtcmem() then return false end
 	setup_rtcmem = nil
 
-	local using_rtctime
+	local fast_dsleep = true		-- to be removed when instant dsleep committed
 	if nil == use_rtctime then
-		if node.rtctimeDsleep then
-			Log ("using node.rtctimeDsleep")
-			dsleep = node.rtctimeDsleep
-			using_rtctime = true
+		if node.dsleep_instant then
+			Log ("using node.dsleep_instant")
+			dsleep = node.dsleep_instant
 		elseif rtctime then
 			Log ("using rtctime.dsleep")
 			dsleep = rtctime.dsleep
-			using_rtctime = true
 		else
 			Log ("using node.dsleep")
 			dsleep = node.dsleep
-			using_rtctime = false
+--			fast_dsleep = false
 		end
 	elseif use_rtctime then			-- froce use rtctime.dsleep
 		Log ("using rtctime.dsleep")
 		dsleep = rtctime.dsleep
-		using_rtctime = true
 	else					-- force use node.dsleep
 		Log ("using node.dsleep")
 		dsleep = node.dsleep
-		using_rtctime = false
+--		fast_dsleep = false
 	end
 	if nil == dsleep then
 		Log ("dsleep is nil")
 		return false
 	end
 
--- some defaults
-	rtc_rate = rtc_rate or 1.0			-- tmr/time
-	sleep_time = sleep_time or 60			-- seconds
-	sleep_time = sleep_time * 1000000		-- tmr
-
-	if using_rtctime then
-		wakeup_delay = wakeup_delay or   1300	-- 1.3ms to enter with rtctime.sleep
+-- some timing defaults
+	if fast_dsleep then
+		wakeup_delay = wakeup_delay or   1300	-- 1.3ms to enter dsleep fast
 	else
 		wakeup_delay = wakeup_delay or 105000	-- time to enter with node.dsleep
 	end
 	dsleep_delay = dsleep_delay or  70000		-- 70ms unaccounted wakeup time
 
+	rtc_rate = rtc_rate or 1.0			-- tmr/time
+	sleep_time = sleep_time or 60			-- seconds
+	sleep_time = sleep_time * 1000000		-- tmr
+
 -- when running in adc mode, do one vdd read every vddNextTime.
 -- it is done with no wifi, and means an extra restart.
 -- the read value is stored in rtcmem to be reported in future messages.
 
-	vddNextTime = vddNextTime or 60*60*1000*1000	-- 1 hour
+	vddNextTime = vddNextTime or 60*60*1000		-- 60m in ms
 
 	if have_rtc_mem and adc_factor and vddNextTime > 0 then
 		if not read_vdd() then return false end

@@ -1,19 +1,20 @@
-time_First = tmr.now()
-time_dofile = time_dofile + (time_First-start_dofile)
+time_First = done_file (tmr.now())
 local mLog = mLog
 local function Log (...) if print_log then mLog ("first", unpack(arg)) end end
 local function Trace(n, new) mTrace(6, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
+local timeout = tmr.create()
+
 local function have_first()
 	time_First = tmr.now() - time_First
+	timeout:unregister()
 	do_file ("save")
 end
 
 if "mqtt" == save_proto then
 	local mqtt_client = string.gsub(string.lower(wifi.sta.getmac()),":","-")
-	local topic = ("stats/%s/message"):format(mqtt_client)
 	local mqttClient = mqtt.Client(mqtt_client, 2)
 	mqttClient:on ("offline", function(client)
 		Log("mqtt offline")
@@ -26,6 +27,7 @@ if "mqtt" == save_proto then
 	end)
 	mqttClient:on ("connect", function(client)
 		Log("mqtt connect")
+		local topic = ("stats/%s/message"):format(mqtt_client)
 		client:subscribe(topic, 0, function(client)
 			Log ("subscribed")
 		end)
@@ -45,6 +47,14 @@ if "mqtt" == save_proto then
 		mqtt_client  = nil
 		have_first()
 	end)
+	timeout:alarm(first_timeout, tmr.ALARM_SINGLE, function()
+		Log("exchange timeout")
+		Trace (12)
+		runCount = 1
+		conn:close()
+		mqtt_client  = nil
+		have_first()
+	end)
 	mqttClient:connect (saveServer, savePort, 0)
 elseif "tcp" == save_proto or "udp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)
@@ -52,7 +62,7 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 	conn:on("disconnection", function(client, data)
 		Log ("disconnected")
 
-		if runCount then
+		if runCount then	-- probably not unexpected anymore
 			Log ("unexpected disconnection, runCount=%d", runCount)
 			Trace (5)	-- should not happen
 		else
@@ -81,6 +91,7 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 	conn:on("sent", function(client)
 		Log ("sent")
 		Trace (8)
+		tmr.wdclr()
 	end)
 
 	conn:on("connection", function(client)
@@ -89,6 +100,16 @@ elseif "tcp" == save_proto or "udp" == save_proto then
 
 		tmr.wdclr()
 		client:send (("last/%s"):format(clientID))	-- request last runCount
+	end)
+
+-- normally done in 1-2s
+	timeout:alarm(first_timeout, tmr.ALARM_SINGLE, function()
+		Log("exchange timeout")
+		Trace (11)
+		conn:close()
+		conn  = nil
+		runCount = 1
+		have_first()
 	end)
 
 	Trace (6)

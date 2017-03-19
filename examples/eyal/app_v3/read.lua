@@ -7,13 +7,21 @@ local function Trace(n, new) mTrace(4, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
+local function no_ow()
+	for n = 1,#ow_addr do
+		temp[#temp+1] = 85
+	end
+end
+
 local function read_ds18b20()
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
 	start_dofile = tmr.now()
 	local t = require ("ds18b20")
 	if not t then
+		Trace(1)
 		Log("required ds18b20 failed")
+		no_ow()
 		return false
 	end
 	local tm = tmr.now()
@@ -22,7 +30,9 @@ local function read_ds18b20()
 	time_read = time_read + (tm - start_dofile)	-- adjust time
 
 	if not t.setup (ow_pin) then
+		Trace(2)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
+		no_ow()
 		return false
 	end
 
@@ -34,13 +44,24 @@ local function read_ds18b20()
 		end
 	end
 
+local good = 0
 	for n = 1,#ow_addr do
 		local tC = t.read(ow_addr[n])
-		if tC == nil or tC == "85.0" or tC == 127.9375 then
-			tC = 85
+		if tC == nil then
+			Trace(3)
+			tC = 86
+		else
+			good = good + 1
+			if tC == "85.0" then
+				tC = 87
+			elseif  tC == 127.9375 then
+				tC = 88
+			end
 		end
 		temp[#temp+1] = tC
+		Log("read[%d]=%.4f", #temp+1, tC)
 	end
+Trace(6+good)
 	return true
 end
 
@@ -53,24 +74,33 @@ local function read_bme280()
 		-- 0			inactive_duration (not used)
 		-- 0			Filter off
 	if nil == dev or 0 == dev then
+		Trace(4)
 		Log ("bme280.init failed")
 		return false
 	end
 	Log ("found %s", ({"none","bme280", "bmp280"})[dev])
 
-	local T, QFE, H, P = bme280.read(622)	-- my property's altitude is 622m
+	local T, QFE, H, P = bme280.read(622)
+		-- T	temperature in dC
 		-- QFE	raw air pressure in hectopascals
+		-- H	relative humidity percent
 		-- P	sea level equivalent air pressure in hectopascals (QNH)
 		-- 622	sensor location altitude in meters
-	if nil == T then
-		Log ("bme280.read failed")
-		T, P, H = 85*100, 1000*1000, 0*1000
---		return false
+	-- it is possible for *some* values to be nil!
+	local failed = 0
+	if nil == T then T =  85*100  failed = failed + 1 end
+	if nil == P then P = 999*1000 failed = failed + 2 end
+	if nil == H then H =   0*1000 failed = failed + 4 end
+	if failed > 0 then
+		Trace(5)
+		Log ("bme280.read failed %d", failed)
 	end
-	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d"):format(
+
+	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d,f%d"):format(
 		T/100,  T%100,
 		P/1000, P%1000,
-		H/1000, H%1000)
+		H/1000, H%1000,
+		failed)
 	Log (weather)
 	temp[#temp+1] = T/100
 

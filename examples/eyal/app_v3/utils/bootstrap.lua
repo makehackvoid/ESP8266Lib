@@ -6,4 +6,4 @@ function wait () if not 5 == wifi.sta.status() or not wifi.sta.getip() then prin
     if (off) then file.write(string.sub(payload, off)) file.flush() end end)
   conn:on("disconnection", function(c) file.close() print(t().." run "..pgm) dofile(pgm) end)
   file.remove(pgm) file.open(pgm, "w+") ip, mask, host = wifi.sta.getip() found = false conn:connect(port,host)
-end tmr.delay(2*1000000) port, path, pgm = 80, "/upload", "u.lc" t = tmr.now print(t().." get "..pgm) tmr.alarm(1, 100, 1, wait)
+end tmr.delay(2*1000000) port, path, pgm = 80, "/upload", (pgm or "u.lc") t = tmr.now print(t().." get "..pgm) tmr.alarm(1, 100, 1, wait)

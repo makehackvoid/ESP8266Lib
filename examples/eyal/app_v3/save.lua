@@ -115,6 +115,7 @@ reason = ri.reason;
 
 	if not weather then weather = "" end
 
+	local vbat, vdd33
 	if adc_factor then	-- cannot read vdd with adc anymore
 		vbat = adc.read(0)*adc_factor
 		vdd33 = rtcmem.read32(rtca_vddLastRead)

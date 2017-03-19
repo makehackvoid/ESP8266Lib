@@ -11,11 +11,17 @@ out_bleep()
 
 local sta = wifi.sta
 local eventmon = wifi.eventmon
+local timeout = tmr.create()
 
 local function cleanup()
+	timeout:unregister()
 	eventmon.unregister(eventmon.STA_CONNECTED)
---	eventmon.unregister(eventmon.STA_GOT_IP)
+	eventmon.unregister(eventmon.STA_GOT_IP)
 	eventmon.unregister(eventmon.STA_DISCONNECTED)
+--[[
+	eventmon.unregister(eventmon.STA_AUTHMODE_CHANGE)
+	eventmon.unregister(eventmon.STA_DHCP_TIMEOUT)
+--]]
 end
 
 local function give_up()
@@ -96,8 +102,8 @@ local function dowifi()
 	eventmon.register(eventmon.STA_CONNECTED, function(T)
 		Trace(4)
 		local ip = sta.getip()
-		Log("CONNECTED as %s status=%d", ip, sta.status())
-		have_connection(ip)
+		Log("CONNECTED as %s status=%d channel=%d", ip, sta.status(), T.channel)
+--		have_connection(ip)
 	end)
 
 	if wifi.STA_GOTIP == sta.status() then
@@ -108,17 +114,32 @@ local function dowifi()
 		return
 	end
 
---[[
+	timeout:alarm(wifi_timeout, tmr.ALARM_SINGLE, function()
+		Log("connection timeout")
+		Trace(11)
+		give_up()
+	end)
+
 	eventmon.register(eventmon.STA_GOT_IP, function(T)
 		Trace(6)
-		Log("got IP '%s'", T.IP)
---		have_connection(T.IP)
+		Log("GOT_IP '%s'", T.IP)
+		have_connection(T.IP)
+	end)
+
+--[[
+	eventmon.register(eventmon.STA_DISCONNECTED, function(T)
+		Log("DISCONNECTED reason %d", T.reason)
+		retry()
+	end)
+
+	eventmon.register(eventmon.STA_AUTHMODE_CHANGE, function(T)
+		Log("AUTHMODE_CHANGE old_auth_mode=%d new_auth_mode=%d",
+			T.old_auth_mode, T.new_auth_mode)
 	end)
 --]]
 
-	eventmon.register(eventmon.STA_DISCONNECTED, function(T)
-		Log("disconnected, reason %d", T.reason)
-		retry()
+	eventmon.register(eventmon.STA_DHCP_TIMEOUT, function(T)
+		Log("STA_DHCP_TIMEOUT")
 	end)
 end
 

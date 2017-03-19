@@ -12,10 +12,18 @@ if nil == conn then
 	message = nil
 	doSleep()
 else
+	local timeout = tmr.create()
+	timeout:alarm(save_udp_timeout, tmr.ALARM_SINGLE, function()
+		Log("send timeout")
+		Trace(4)
+		doSleep()
+	end)
+
 	Log ("send  to '%s:%d' '%s'", saveServer, savePort, message)
 	conn:send(savePort, saveServer, message, function(client)
 		grace_time = tmr.now() + udp_grace_ms*1000
 		Trace(2)
+		timeout:unregister()
 		Log ("sent")
 		message = nil
 

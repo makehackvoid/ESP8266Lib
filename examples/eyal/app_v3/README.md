@@ -2,6 +2,7 @@ An example of reading temperature from a ds18b20 and submitting to a server
 ------------
 
 Note: you need a recent `nodemcu-firmware` `dev` branch (SDK 2.0.0) for this app.
+It uses the new `node.dsleep(us, mode, instant)` in `funcs.lua`.
 
 It can also read the `bme280` and more.
 

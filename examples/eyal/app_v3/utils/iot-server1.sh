@@ -3,8 +3,8 @@
 me="`basename "$0" .sh`"
 dir="`dirname "$0"`"
 dir="`realpath "$dir"`"
-logdir='/data/tellerstats'
 
 port='11883'
-log="$logdir/iot-server-$port.log" path='/data/tellerstats' \
+logdir="/data/tellerstats/iot-server-$port"
+log="$logdir/iot-server-$port.log" path="$logdir" \
 	"$dir/iot-server.sh" --port=$port

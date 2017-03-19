@@ -1,3 +1,6 @@
+-- this makes no difference in this app:
+-- node.egc.setmode(node.egc.ON_ALLOC_FAILURE)	-- default is ALWAYS
+
 function mLog (modname, message, ...)
 	if nil == print_log or print_log then
 		if #arg > 0 then
@@ -20,7 +23,6 @@ end
 time_dofile, start_dofile = 0, time_start
 done_file (tmr.now())
 
---abort = false
 last_trace = nil
 prev_module = 0
 prev_trace_h, prev_trace_l = 0, 0
@@ -66,9 +68,6 @@ function mTrace(mod, n, new)
 end
 local function Trace(n, new) mTrace(1, n, new) end Trace (0, true)
 
--- this makes mo difference in this app:
--- node.egc.setmode(node.egc.ON_ALLOC_FAILURE)	-- default is ALWAYS
-
 function used ()
 	if print_stats then
 		Log("used %d, heap=%d",
@@ -85,8 +84,7 @@ function do_file(fname, fg)
 		start_dofile = tmr.now()
 		dofile (fullName)
 	else
-		tmr.alarm(1, 1, tmr.ALARM_SINGLE, function()
-			tmr.stop(1)
+		tmr.create():alarm(1, tmr.ALARM_SINGLE, function()
 			start_dofile = tmr.now()
 			dofile (fullName)
 		end)
@@ -121,15 +119,23 @@ local do_vdd_read_cycle = false
 
 function safe_dsleep(us, mode)
 	if print_log then
-		tmr.alarm(4, 5, tmr.ALARM_SINGLE, function()
-			dsleep (us, mode)
+		tmr.create():alarm(5, tmr.ALARM_SINGLE, function()
+			dsleep (us, mode, 1)
 		end)
 	else
-		dsleep (us, mode)
+		dsleep (us, mode, 1)
 	end
 end
 
 function restart_really(time_left)
+	if disconnect and wifi.STA_IDLE ~= wifi.sta.status() then
+		wifi.sta.disconnect()
+	end
+
+--	if dsleep ~= node.dsleep and ow_pin then
+--		gpio.mode (ow_pin, gpio.INPUT, gpio.PULLUP)
+--	end
+
 	out_bleep()
 
 --[[
@@ -162,22 +168,22 @@ end
 function restart(time_left)
 	if have_rtc_mem then
 		local thisTime = tmr.now() + (wakeup_delay+dsleep_delay)*rtc_rate	-- us
-		rtcmem.write32(rtca_lastTime, thisTime)
-		local totalTime = rtcmem.read32(rtca_totalTime)
+		rtcmem.write32(rtca_lastTime, thisTime)					-- us
+		local totalTime = rtcmem.read32(rtca_totalTime)				-- ms
 		rtcmem.write32(rtca_totalTime, totalTime + thisTime/1000)		-- ms
-		rtcmem.write32(rtca_timeLeft, (time_left or 0))
+		rtcmem.write32(rtca_timeLeft, (time_left or 0))				-- us
 
 		if adc_factor and vddNextTime > 0 then
-			local t = rtcmem.read32(rtca_vddNextTime)
+			local t = 1000*rtcmem.read32(rtca_vddNextTime)			-- ms -> us
 			local l = time_left or 0
 			Log ("t=%.6f sleep_time=%.6f l=%.6f",
 				t/1000000, sleep_time/1000000, l/1000000)
 			if t > sleep_time then
 				t = t - l
-				rtcmem.write32(rtca_vddNextTime, t)
+				rtcmem.write32(rtca_vddNextTime, t/1000)		-- us -> ms
 				Log ("time to next vdd read: %.6f", t/1000000)
-			else -- if t == vddNextTime then
-				rtcmem.write32(rtca_vddNextTime, vddNextTime)
+			else
+				rtcmem.write32(rtca_vddNextTime, vddNextTime)		-- ms
 				adc.force_init_mode(adc.INIT_VDD33)
 				grace_time = grace_time + 43*1000	-- adc.force takes 43ms
 				do_vdd_read_cycle = true
@@ -207,7 +213,7 @@ function restart(time_left)
 	end
 
 	if t_delay >= 1 then
-		tmr.alarm(3, t_delay, tmr.ALARM_SINGLE, function()
+		tmr.create():alarm(t_delay, tmr.ALARM_SINGLE, function()
 			restart_really(time_left)
 		end)
 	else
@@ -239,8 +245,7 @@ function doSleep ()
 			restart (0)
 		else
 			Log("restart in %gs", time_left/1000)
-			tmr.alarm(2, time_left, tmr.ALARM_SINGLE, function()
-				tmr.stop(2)
+			tmr.create():alarm(time_left, tmr.ALARM_SINGLE, function()
 				Trace(4, true)
 				restart (0)
 			end)

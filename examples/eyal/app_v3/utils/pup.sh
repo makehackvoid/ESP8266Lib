@@ -3,6 +3,7 @@
 # 21 Aug 16 EL Remove empty lines from *.lua
 # 20 Dec 16 EL Upload larger files first
 #	EL Add 'files.txt'
+# 14 Jan 17 EL Sort and trim 'files.txt'
 
 echod() {
 	echo "`date '+%F %T'` $me: $@"
@@ -25,24 +26,36 @@ dir="`dirname "$0"`"
 #ccflags='-s'	# strip
  ccflags=''
 
-tmpname="$me-$$.lua"
-tmp="$HOME/tmp/$tmpname"
-
 here="`readlink -f '.'`"
 there="`readlink -f '/www/upload'`"
 upfile="$there/u.lua"
 srclist="$there/files.txt"
 
-echod "source files used:" >"$srclist"
-
 test "$here" = "$there" && copy='false' || copy='true'
 
-upit='true'
-test 'x-n' = "x$1" && {
-	upit='false'
+mac=''		# upload specific mac file
+upit='true'	# upload to esp
+text='true'	# upload 'files.txt'
+while test -n "$1" ; do
+	case "$1" in
+	-n)
+		upit='false'
+		;;
+	-x)
+		text='false'
+		;;
+	-*)
+		die "unkbown option '$1'"
+		;;
+	*)
+		test -n "$mac" && \
+			die "unkbown argument '$1'"
+		mac="$1"
+		;;
+	esac
 	shift
-}
-mac="$1" ; shift
+done
+
 test -n "$mac" || mac='*'
 
 {
@@ -52,24 +65,24 @@ test -n "$mac" || mac='*'
 	cat "$dir/upload.lua"
 
 	echo -n 'download ({'
-	tmp=''
 	uplist=''
+	lslist=''
 	for file in i?.lua *.lc ; do
 		test -f "$file" || continue
 		tmp=''
+		upthis='true'	# upload this file
 		case "$file" in
 		*.lua)
-			ls -l "$file" >>"$srclist"
 			$copy && {
 				tmp="$file.tmp"
 				sed '/^\r/d;/^--[ \t]/d' "$file" >"$tmp"
+				touch -r "$file" "$tmp"
 			}
 			;;
 		esp-test.*)
-			upthis='true'	# copy+upload
 			;;
-		esp-*.*)
-			upthis='false'	# copy only
+		esp-*.lc)
+			upthis='false'	# only copy to $there
 			;;
 		init.*|compile.*|test.*)
 			continue	# ignore
@@ -78,12 +91,11 @@ test -n "$mac" || mac='*'
 			continue	# ignore, needed if using i2c
 			;;
 		*)
-			upthis='true'	# copy+upload
 			;;
 		esac
 
 		$copy && {
-			ls -l "${file/.lc/.lua}" >>"$srclist"
+			lslist="$lslist ${file/.lc/.lua}"
 			if test -n "$tmp" ; then
 				mv "$tmp" "$there/$file"
 			else
@@ -92,11 +104,9 @@ test -n "$mac" || mac='*'
 			chmod 666 "$there/$file"
 		}
 
-		$upthis && {
+		$upthis && \
 			uplist="$uplist $file"
-		}
 	done
-#	uplist="$uplist files.txt"
 	col=0
 	for file in `(cd "$there" ; ls -S $uplist)` ; do
 		col=$((col+1))
@@ -106,10 +116,18 @@ test -n "$mac" || mac='*'
 		}
 		echo -n "'$file',"
 	done
-#	echo -n "my_esp_config()"	# will upload correct "esp-MAC.lc"
+#	echo -n "my_esp_config()"	# now done in upload.lua
 	echo -n "esp"			# will upload correct "esp-MAC.lc"
+	$text && \
+		echo -n ",'`basename "$srclist"`'"
 	echo '}, "/upload")'
 } >"$upfile"
+
+$text && {
+	echod "source files used:" >"$srclist"
+	ls -lt --time-style='+%F %T' $lslist | cut -d' ' -f 5- >>"$srclist"
+}
+
 compile "$upfile"
 
 $upit && \
