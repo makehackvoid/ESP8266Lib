@@ -14,6 +14,7 @@ if nil == conn then
 else
 	conn:on("disconnection", function(client)
 		Trace(4)
+		tmr.stop(1)
 		Log ("disconnected")
 
 		conn = nil
@@ -35,5 +36,12 @@ else
 	end)
 
 	Log("connecting to %s:%d", saveServer, savePort)
+	tmr.alarm(1, save_tcp_timeout, tmr.ALARM_SINGLE, function()
+		Log("send timeout")
+		Trace(6)
+		conn = nil
+		message = nil
+		doSleep()
+	end)
 	conn:connect(savePort, saveServer)
 end
