@@ -1,5 +1,10 @@
-A collection of programs and modules for use on the esp8266 with lua firmware
+A collection of programs and modules for use on the esp8266 (mostly) with lua firmware (mostly)
 ======
+
+esp32/
+-----
+
+Stuff done on the new esp-32.
 
 misc/
 -----
@@ -17,22 +22,22 @@ rtos/
 An RTOS SDK implementation of the same app. Had issues so it was abandoned :-(
 
 deepSleep/
-------
+---------
 
 A similar application written as an arduino sketch. I know that this is a bad name...
 
 app_v3/
-------
+-------
 
 An even later version of the application.
 
 app_v2/
-------
+-------
 
 A later version of the application.
 
 app_v1/
-------
+-------
 
 A lua app where a ds18b20 temperature sensor is read and the result is sent to a network server.
 This is a test program, with more code than is necessary to accomplish this task.
@@ -43,7 +48,7 @@ bin/
 Some firmwares that were built locally while waiting for the official ones.
 
 mqtt/
---------
+-----
 
 Examples of programs that read the temperature and publish the reading to MQTT.
 
