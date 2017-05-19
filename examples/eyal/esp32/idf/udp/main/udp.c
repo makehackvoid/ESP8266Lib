@@ -20,8 +20,14 @@
 #include <sys/socket.h>
 #include <rom/rtc.h>
 
-#define AP_SSID		"SSID"
-#define AP_PASS		"PASS"
+// best to provide the following in CFLAGS
+#ifndef AP_SSID
+#error undefined AP_SSID
+#endif
+#ifndef AP_PASS
+#error undefined AP_SSID
+#endif
+
 #define SVR_IP		"192.168.2.7"
 #define SVR_PORT	21883
 
@@ -36,13 +42,14 @@
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
 #define LOG_FLUSH	0	// 0=no flush after each Log message
 
-#define DBG_PIN		15
-#define OUT_PIN		17
+#define DBG_PIN		15	// pull low silence Log
+#define OUT_PIN		17	// toggled to mark program steps
 
 RTC_DATA_ATTR static int n = 0;
-RTC_DATA_ATTR static struct timeval sleep_start = {0, 0};
+RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 
-//static uint64_t time_since_boot;
+uint64_t system_get_rtc_time(void);
+static uint64_t app_start_us = 0;
 
 static struct timeval app_start;
 static int wakeup_cause, reset_reason;
@@ -122,35 +129,28 @@ typedef enum {
     RTCWDT_BROWN_OUT_RESET = 15,    /**<15, Reset when the vdd voltage is not stable*/
     RTCWDT_RTC_RESET       = 16     /**<16, RTC Watch dog reset digital core and rtc module*/
 } RESET_REASON;		// from rtc_get_reset_reason()
-
 #endif
 
 static void format_msg (char *msg, int mlen)
 {
 	struct timeval now;
-	int s, us;
+	uint64_t us;
 
-Log("sleep_start=%ld.%06ld app_start=%ld.%06ld",
-	sleep_start.tv_sec, sleep_start.tv_usec,
-	  app_start.tv_sec,   app_start.tv_usec);
+	if (sleep_start_us > 0)
+		us = app_start_us - sleep_start_us;
+	else
+		us = 0;
 
-	if (sleep_start.tv_sec > 0) {
-		s =  (int)(app_start.tv_sec  - sleep_start.tv_sec);
-		us = (int)(app_start.tv_usec - sleep_start.tv_usec);
-		if (us < 0) {
-			us += 1000000;
-			--s;
-		}
-	} else
-		s = us = 0;
+Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
+	sleep_start_us, app_start_us, app_start_us-sleep_start_us);
 
 	get_time (&now);
 
 // times=s0.094,u0.045,r0.047,w0.070,F0.000,S0.010,d0.100,t0.301
 	snprintf (msg, mlen,
-		"show esp-32a %d times=w%d.%06d,s%u.%06u,t%u.%06u stats=fs%d,fh%d,fr%d,c%03x,r%d radio=s%d",
+		"show esp-32a %d times=w%lld,s%u.%06u,t%u.%06u stats=fs%d,fh%d,fr%d,c%03x,r%d radio=s%d",
 		n,
-		s, us,
+		us,
 		(uint)app_start.tv_sec, (uint)app_start.tv_usec,
 		(uint)now.tv_sec, (uint)now.tv_usec,
 		0, 0, 0,	// failures not counted yet
@@ -200,36 +200,33 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 	fflush(stdout);
 #endif
 
-	gettimeofday (&sleep_start, NULL);
 	toggle();
+	sleep_start_us = system_get_rtc_time();
 	esp_deep_sleep(SLEEP_S*1000000);
+}
+
+static void set_ip (void)
+{
+#if !USE_DHCPC
+Log ("tcpip_adapter_dhcpc_stop");
+	tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);
+
+Log ("tcpip_adapter_set_ip_info");
+	tcpip_adapter_ip_info_t ip_info_new;
+	memset (&ip_info_new, 0, sizeof(ip_info_new));
+	ip4addr_aton(MY_IP, &ip_info_new.ip);
+	ip4addr_aton(MY_NM, &ip_info_new.netmask);
+	ip4addr_aton(MY_GW, &ip_info_new.gw);
+	tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info_new);
+#endif	/* if !USE_DHCPC */
 }
 
 static esp_err_t event_handler (void *ctx, system_event_t *event)
 {
 	switch(event->event_id) {
 	case SYSTEM_EVENT_STA_START:
-Log ("SYSTEM_EVENT_STA_START");
-
-#if !USE_DHCPC
-Log ("tcpip_adapter_dhcpc_stop");
-		tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);
-
-Log ("tcpip_adapter_set_ip_info");
-		tcpip_adapter_ip_info_t ip_info_new;
-		memset (&ip_info_new, 0, sizeof(ip_info_new));
-		ip4addr_aton(MY_IP, &ip_info_new.ip);
-		ip4addr_aton(MY_NM, &ip_info_new.netmask);
-		ip4addr_aton(MY_GW, &ip_info_new.gw);
-		tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info_new);
-#endif	/* if !USE_DHCPC */
-
-Log ("esp_wifi_set_vendor_ie_cb rc=%d",
-		esp_wifi_set_vendor_ie_cb(esp_vendor_ie_cb, NULL));
-
-Log ("esp_wifi_connect");
 		toggle();
-		esp_wifi_connect();
+Log ("SYSTEM_EVENT_STA_START");
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
 		toggle();
@@ -258,7 +255,7 @@ Log ("esp_wifi_disconnect");
 #else
 		finish ();
 #endif
-	break;
+		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 Log ("SYSTEM_EVENT_STA_DISCONNECTED");
 
@@ -286,6 +283,8 @@ Log ("esp_phy_load_cal_and_init");
 Log ("tcpip_adapter_init");
 	tcpip_adapter_init();
 
+	set_ip();
+
 Log ("esp_event_loop_init");
 	esp_event_loop_init(event_handler, NULL);
 
@@ -293,15 +292,20 @@ Log ("esp_wifi_init");
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 	esp_wifi_init(&cfg);
 
+Log ("esp_wifi_set_vendor_ie_cb");
+	esp_wifi_set_vendor_ie_cb(esp_vendor_ie_cb, NULL);
+
 	if (reset_reason != DEEPSLEEP_RESET) {	// this should be saved in flash
 Log ("esp_wifi_set_mode");
 		esp_wifi_set_mode(WIFI_MODE_STA);
 
-		wifi_config_t wifi_config;
-		memset (&wifi_config, 0, sizeof(wifi_config));
-		memcpy (wifi_config.sta.ssid, AP_SSID, sizeof(wifi_config.sta.ssid));
-		memcpy (wifi_config.sta.password, AP_PASS, sizeof(wifi_config.sta.password));
-	
+		wifi_config_t wifi_config = {
+			.sta = {
+				.ssid     = AP_SSID,
+				.password = AP_PASS,
+				.bssid_set = 0
+			},
+		};
 Log ("esp_wifi_set_config");
 		esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
 	}
@@ -309,18 +313,17 @@ Log ("esp_wifi_set_config");
 Log ("esp_wifi_start");
 	esp_wifi_start();
 
-Log ("udp end");
+Log ("esp_wifi_connect");
+	esp_wifi_connect();
 }
 
 void app_main ()
 {
-//	uint64_t system_get_rtc_time(void);
-
 	gpio_pad_select_gpio(OUT_PIN);
 	gpio_set_direction(OUT_PIN, GPIO_MODE_OUTPUT);
 	gpio_set_level(OUT_PIN, 1);	// mark app start
 
-//	time_since_boot = system_get_rtc_time();
+	app_start_us = system_get_rtc_time();
 	gettimeofday (&app_start, NULL);
 
 	gpio_pad_select_gpio(DBG_PIN);
