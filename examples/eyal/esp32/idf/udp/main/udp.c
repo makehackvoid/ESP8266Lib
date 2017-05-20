@@ -13,6 +13,7 @@
 #include "esp_spi_flash.h"
 #include "esp_err.h"
 #include "esp_phy_init.h"
+#include "esp_log.h"
 
 #include <string.h>
 #include <esp_wifi.h>
@@ -35,15 +36,16 @@
 #define MY_NM		"255.255.255.0"
 #define MY_GW		SVR_IP
 
-#define SLEEP_S		5
-#define GRACE_MS	30	// 5ms is too short
+#define SLEEP_S		5	// seconds
+#define GRACE_MS	40	// multiple of 10ms
 
 #define USE_DHCPC	0	// 0=no, use static IP
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
 #define LOG_FLUSH	0	// 0=no flush after each Log message
 
-#define DBG_PIN		15	// pull low silence Log
-#define OUT_PIN		17	// toggled to mark program steps
+#define OUT_PIN		17	// OUT toggled to mark program steps
+#define TOGGLE_PIN	16	// IN  pull low to disable toggle()
+#define DBG_PIN		15	// IN  pull low to silence Log()
 
 RTC_DATA_ATTR static int n = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
@@ -55,6 +57,7 @@ static struct timeval app_start;
 static int wakeup_cause, reset_reason;
 static int rssi = 0;
 static int do_log = 0;
+static int do_toggle = 0;
 static int done = 0;
 
 static void delay (int ms)
@@ -62,12 +65,23 @@ static void delay (int ms)
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 }
 
+static void delay_us (int us)
+{
+	uint64_t end_us = us + system_get_rtc_time();
+
+	while (system_get_rtc_time() < end_us)
+		{}
+}
+
 // pin is LOW  during sleep
 // pin is HIGH at start
-static void toggle() {
-	gpio_set_level(OUT_PIN, 0);
-	delay (1);
-	gpio_set_level(OUT_PIN, 1);
+static void toggle(int ntimes) {
+	if (do_toggle) while (ntimes-- > 0) {
+		gpio_set_level(OUT_PIN, 0);
+		delay_us (800);
+		gpio_set_level(OUT_PIN, 1);
+		delay_us (800);
+	}
 }
 
 #define Dbg	printf("%d\n", __LINE__);
@@ -173,34 +187,25 @@ static void send_msg (void)
 	format_msg (msg, sizeof(msg));
 
 Log ("Sending '%s'", msg);
+	toggle(1);
 	sendto(mysocket, msg, strlen(msg), 0,
 		(struct sockaddr *)&remote_addr, sizeof(remote_addr));
-}
-
-static void esp_vendor_ie_cb (
-	void *ctx,
-	wifi_vendor_ie_type_t type,
-	const uint8_t sa[6],
-	const uint8_t *vnd_ie,
-	int _rssi)
-{
-Log ("Received rssi=%d", _rssi);
-	rssi = _rssi;
 }
 
 static void finish (void)
 {
 #if !DISCONNECT && defined(GRACE_MS) && GRACE_MS > 0
 Log ("delay %dms", GRACE_MS);
+	toggle(1);
 	delay(GRACE_MS);	// time to send UDP message
 #endif
 
 Log ("esp_deep_sleep %ds", SLEEP_S);
 #if !LOG_FLUSH
-	fflush(stdout);
+	if (do_log) fflush(stdout);
 #endif
 
-	toggle();
+	toggle(2);
 	sleep_start_us = system_get_rtc_time();
 	esp_deep_sleep(SLEEP_S*1000000);
 }
@@ -225,12 +230,17 @@ static esp_err_t event_handler (void *ctx, system_event_t *event)
 {
 	switch(event->event_id) {
 	case SYSTEM_EVENT_STA_START:
-		toggle();
+		toggle(1);
 Log ("SYSTEM_EVENT_STA_START");
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
-		toggle();
-Log ("SYSTEM_EVENT_STA_CONNECTED");
+		toggle(1);
+{
+		wifi_ap_record_t wifidata;
+		esp_wifi_sta_get_ap_info(&wifidata);
+		rssi = wifidata.rssi;
+Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d", rssi);
+}
 		break;
 	case SYSTEM_EVENT_STA_GOT_IP:
 {
@@ -292,9 +302,6 @@ Log ("esp_wifi_init");
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 	esp_wifi_init(&cfg);
 
-Log ("esp_wifi_set_vendor_ie_cb");
-	esp_wifi_set_vendor_ie_cb(esp_vendor_ie_cb, NULL);
-
 	if (reset_reason != DEEPSLEEP_RESET) {	// this should be saved in flash
 Log ("esp_wifi_set_mode");
 		esp_wifi_set_mode(WIFI_MODE_STA);
@@ -319,17 +326,26 @@ Log ("esp_wifi_connect");
 
 void app_main ()
 {
-	gpio_pad_select_gpio(OUT_PIN);
-	gpio_set_direction(OUT_PIN, GPIO_MODE_OUTPUT);
-	gpio_set_level(OUT_PIN, 1);	// mark app start
-
 	app_start_us = system_get_rtc_time();
 	gettimeofday (&app_start, NULL);
+
+	gpio_pad_select_gpio(TOGGLE_PIN);
+	gpio_set_direction(TOGGLE_PIN, GPIO_MODE_INPUT);
+	gpio_pullup_en(TOGGLE_PIN);
+	do_toggle = gpio_get_level(TOGGLE_PIN);
+	if (do_toggle) {
+		gpio_pad_select_gpio(OUT_PIN);
+		gpio_set_direction(OUT_PIN, GPIO_MODE_OUTPUT);
+		gpio_set_level(OUT_PIN, 1);	// mark app start
+
+	}
 
 	gpio_pad_select_gpio(DBG_PIN);
 	gpio_set_direction(DBG_PIN, GPIO_MODE_INPUT);
 	gpio_pullup_en(DBG_PIN);
 	do_log = gpio_get_level(DBG_PIN);
+// turn off internal messages below ERROR level
+	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
