@@ -5,7 +5,7 @@
 
 PROJECT_NAME := udp
 
-ESPBAUD = 921600	# 460800
+ESPBAUD = 921600
 
 include $(IDF_PATH)/make/project.mk
 

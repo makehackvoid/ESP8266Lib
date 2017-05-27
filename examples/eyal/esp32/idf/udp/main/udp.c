@@ -6,20 +6,18 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_system.h"
-#include "esp_spi_flash.h"
-#include "esp_err.h"
-#include "esp_phy_init.h"
-#include "esp_log.h"
 
-#include <string.h>
+#include "udp.h"
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <sys/socket.h>
+#include <esp_spi_flash.h>
+#include <esp_phy_init.h>
+#include <esp_log.h>
 #include <esp_wifi.h>
 #include <esp_event_loop.h>
-#include <sys/socket.h>
-#include <rom/rtc.h>
+#include <rom/uart.h>	// for uart_tx_wait_idle()
 
 // best to provide the following in CFLAGS
 #ifndef AP_SSID
@@ -32,44 +30,61 @@
 #define SVR_IP		"192.168.2.7"
 #define SVR_PORT	21883
 
-#define MY_IP		"192.168.2.62"
+#ifndef MY_IP
+#error undefined MY_IP
+#endif
+
 #define MY_NM		"255.255.255.0"
 #define MY_GW		SVR_IP
 
 #define SLEEP_S		5	// seconds
-#define GRACE_MS	40	// multiple of 10ms
+#define GRACE_MS	20	// multiple of 10ms
 
 #define USE_DHCPC	0	// 0=no, use static IP
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
-#define LOG_FLUSH	0	// 0=no flush after each Log message
 
+#define READ_BME280	0	// enable when it starts working...
+
+#define I2C_SCL		19
+#define I2C_SDA		18
 #define OUT_PIN		17	// OUT toggled to mark program steps
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
 #define DBG_PIN		15	// IN  pull low to silence Log()
 
 RTC_DATA_ATTR static int n = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
+RTC_DATA_ATTR static int failSoft = 0;
+RTC_DATA_ATTR static int failHard = 0;
+RTC_DATA_ATTR static int failRead = 0;
+RTC_DATA_ATTR static int lastGrace = 0;
 
-uint64_t system_get_rtc_time(void);
 static uint64_t app_start_us = 0;
+static uint64_t time_wifi_us = 0;
 
 static struct timeval app_start;
-static int wakeup_cause, reset_reason;
+static int wakeup_cause;
+static int reset_reason;
 static int rssi = 0;
-static int do_log = 0;
 static int do_toggle = 0;
 static int done = 0;
+static int retry_count = 0;
 
-static void delay (int ms)
+int do_log = 0;
+
+uint64_t rtc_time_get(void);
+uint64_t _get_rtc_time_us(void);
+uint64_t _get_time_since_boot(void);
+
+void delay (int ms)
 {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 }
 
 static void delay_us (int us)
 {
-	uint64_t end_us = us + system_get_rtc_time();
+	uint64_t end_us = us + _get_time_since_boot();
 
-	while (system_get_rtc_time() < end_us)
+	while (_get_time_since_boot() < end_us)
 		{}
 }
 
@@ -84,18 +99,7 @@ static void toggle(int ntimes) {
 	}
 }
 
-#define Dbg	printf("%d\n", __LINE__);
-
-#define Log(fmt,...) \
-if (do_log) do { \
-	struct timeval now; \
-\
-	get_time (&now); \
-	printf ("%3lu.%06lu " fmt "\n", now.tv_sec, now.tv_usec, ##__VA_ARGS__); \
-	if (LOG_FLUSH) fflush(stdout); \
-} while (0)
-
-static void get_time (struct timeval *now)
+void get_time (struct timeval *now)
 {
 	gettimeofday (now, NULL);
 	if (now->tv_usec < app_start.tv_usec) {
@@ -158,18 +162,32 @@ static void format_msg (char *msg, int mlen)
 Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	sleep_start_us, app_start_us, app_start_us-sleep_start_us);
 
+#if READ_BME280
+	float T = bme280_temp();
+	if (T > 85)
+		++failRead;
+#else
+	float T = 0;
+#endif
+
 	get_time (&now);
+
+	uint64_t ticks = rtc_time_get();		// raw RTC time
+	uint64_t RTC   = _get_rtc_time_us();		// adjusted rtc_time_get()
+	uint64_t FRC   = _get_time_since_boot();	// FRC
 
 // times=s0.094,u0.045,r0.047,w0.070,F0.000,S0.010,d0.100,t0.301
 	snprintf (msg, mlen,
-		"show esp-32a %d times=w%lld,s%u.%06u,t%u.%06u stats=fs%d,fh%d,fr%d,c%03x,r%d radio=s%d",
+		"show esp-32a %d times=D%lld,s%u.%06u,w%.3f,t%u.%06u clocks=R%llu,F%llu,t%llu,g%d stats=fs%d,fh%d,fr%d,c%03x,r%d radio=s%d %.2f",
 		n,
-		us,
+/* times */	us,
 		(uint)app_start.tv_sec, (uint)app_start.tv_usec,
+		time_wifi_us / 1000000.,
 		(uint)now.tv_sec, (uint)now.tv_usec,
-		0, 0, 0,	// failures not counted yet
-		wakeup_cause, reset_reason,
-		-rssi);
+/* clocks */	RTC, FRC, ticks, lastGrace,
+/* stats */	failSoft, failHard, failRead, wakeup_cause, reset_reason,
+/* radio */	-rssi,
+/* temp */	T);
 	++n;
 }
 
@@ -192,12 +210,26 @@ Log ("Sending '%s'", msg);
 		(struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
 
-static void finish (void)
+static void do_grace (void)
 {
-#if !DISCONNECT && defined(GRACE_MS) && GRACE_MS > 0
+#if defined(GRACE_MS) && GRACE_MS > 0
 Log ("delay %dms", GRACE_MS);
 	toggle(1);
+	uint64_t ticks = rtc_time_get();
 	delay(GRACE_MS);	// time to send UDP message
+	lastGrace = (int)(rtc_time_get() - ticks);
+#endif
+}
+
+static void finish (void)
+{
+	if (retry_count > 1)
+		++failHard;
+	else if (retry_count > 0)
+		++failSoft;
+
+#if !DISCONNECT
+	do_grace ();
 #endif
 
 Log ("esp_deep_sleep %ds", SLEEP_S);
@@ -205,8 +237,10 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 	if (do_log) fflush(stdout);
 #endif
 
+	uart_tx_wait_idle(CONFIG_CONSOLE_UART_NUM);
+
 	toggle(2);
-	sleep_start_us = system_get_rtc_time();
+	sleep_start_us = _get_time_since_boot();
 	esp_deep_sleep(SLEEP_S*1000000);
 }
 
@@ -235,6 +269,7 @@ Log ("SYSTEM_EVENT_STA_START");
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
 		toggle(1);
+		time_wifi_us = _get_time_since_boot() - time_wifi_us;
 {
 		wifi_ap_record_t wifidata;
 		esp_wifi_sta_get_ap_info(&wifidata);
@@ -254,11 +289,7 @@ Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
 
 #if DISCONNECT
 		done = 1;
-
-#if defined(GRACE_MS) && GRACE_MS > 0
-Log ("delay %dms", GRACE_MS);
-	delay(GRACE_MS);	// time to send UDP message
-#endif
+		do_grace ();
 
 Log ("esp_wifi_disconnect");
 		esp_wifi_disconnect();
@@ -269,11 +300,11 @@ Log ("esp_wifi_disconnect");
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 Log ("SYSTEM_EVENT_STA_DISCONNECTED");
 
-		if (done)
+		if (done || ++retry_count > 1)
 			finish ();
 		else {
 Log ("esp_wifi_connect");
-			esp_wifi_connect();	// try again
+			esp_wifi_connect();	// try once again
 		}
 		break;
 	default:
@@ -318,6 +349,7 @@ Log ("esp_wifi_set_config");
 	}
 
 Log ("esp_wifi_start");
+	time_wifi_us = _get_time_since_boot();
 	esp_wifi_start();
 
 Log ("esp_wifi_connect");
@@ -326,7 +358,7 @@ Log ("esp_wifi_connect");
 
 void app_main ()
 {
-	app_start_us = system_get_rtc_time();
+	app_start_us = _get_time_since_boot();
 	gettimeofday (&app_start, NULL);
 
 	gpio_pad_select_gpio(TOGGLE_PIN);
@@ -353,6 +385,10 @@ void app_main ()
 	wakeup_cause = rtc_get_wakeup_cause();
 	reset_reason = rtc_get_reset_reason(0);
 
+#if READ_BME280
+	bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET);
+
+#endif
 	udp();
 }
 
