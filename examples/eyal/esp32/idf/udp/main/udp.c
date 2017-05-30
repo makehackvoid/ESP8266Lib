@@ -9,15 +9,18 @@
 
 #include "udp.h"
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <sys/socket.h>
 #include <esp_spi_flash.h>
 #include <esp_phy_init.h>
 #include <esp_log.h>
 #include <esp_wifi.h>
 #include <esp_event_loop.h>
-#include <rom/uart.h>	// for uart_tx_wait_idle()
+#include <rom/uart.h>		// for uart_tx_wait_idle()
+#include <driver/timer.h>	// for timer_get_counter_time_sec()
+#include <soc/efuse_reg.h>	// needed by getChip*()
+
+#include "bme280.h"
+#include "ds18b20.h"
 
 // best to provide the following in CFLAGS
 #ifndef AP_SSID
@@ -38,25 +41,29 @@
 #define MY_GW		SVR_IP
 
 #define SLEEP_S		5	// seconds
-#define GRACE_MS	20	// multiple of 10ms
+#define GRACE_MS	50	// multiple of 10ms
 
 #define USE_DHCPC	0	// 0=no, use static IP
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
 
 #define READ_BME280	0	// enable when it starts working...
+#define READ_DS18B20	1
 
-#define I2C_SCL		19
-#define I2C_SDA		18
-#define OUT_PIN		17	// OUT toggled to mark program steps
+#define I2C_SCL		22	// i2c
+#define I2C_SDA		21	// i2c
+#define OUT_PIN		19	// OUT toggled to mark program steps
+#define OW_PIN		18	// ow
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
 #define DBG_PIN		15	// IN  pull low to silence Log()
 
-RTC_DATA_ATTR static int n = 0;
+RTC_DATA_ATTR static int runCount = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 RTC_DATA_ATTR static int failSoft = 0;
 RTC_DATA_ATTR static int failHard = 0;
 RTC_DATA_ATTR static int failRead = 0;
 RTC_DATA_ATTR static int lastGrace = 0;
+RTC_DATA_ATTR static uint64_t timeLast = 0;
+RTC_DATA_ATTR static uint64_t timeTotal = 0;
 
 static uint64_t app_start_us = 0;
 static uint64_t time_wifi_us = 0;
@@ -75,27 +82,31 @@ uint64_t rtc_time_get(void);
 uint64_t _get_rtc_time_us(void);
 uint64_t _get_time_since_boot(void);
 
-void delay (int ms)
+
+static uint8_t getChipRevision (void)
 {
-	vTaskDelay(ms / portTICK_PERIOD_MS);
+	return (REG_READ (EFUSE_BLK0_RDATA3_REG)>>EFUSE_RD_CHIP_VER_RESERVE_S)&&EFUSE_RD_CHIP_VER_RESERVE_V;
 }
 
-static void delay_us (int us)
+static uint64_t getChipMAC (void)
 {
-	uint64_t end_us = us + _get_time_since_boot();
-
-	while (_get_time_since_boot() < end_us)
-		{}
+	uint64_t mac = 
+ (REG_READ (EFUSE_BLK0_RDATA2_REG)>>EFUSE_RD_WIFI_MAC_CRC_HIGH_S)&&EFUSE_RD_WIFI_MAC_CRC_HIGH_V;
+	mac = (mac << 32) |
+((REG_READ (EFUSE_BLK0_RDATA1_REG)>>EFUSE_RD_WIFI_MAC_CRC_LOW_S) &&EFUSE_RD_WIFI_MAC_CRC_LOW_V);
+	return mac;
 }
 
 // pin is LOW  during sleep
 // pin is HIGH at start
-static void toggle(int ntimes) {
+// toggle is 100us: 50us LOW, 50us HIGH (not on final time)
+void toggle(int ntimes) {
 	if (do_toggle) while (ntimes-- > 0) {
 		gpio_set_level(OUT_PIN, 0);
-		delay_us (800);
+		delay_us (50);
 		gpio_set_level(OUT_PIN, 1);
-		delay_us (800);
+		if (ntimes)
+			delay_us (50);
 	}
 }
 
@@ -110,6 +121,20 @@ void get_time (struct timeval *now)
 	now->tv_sec  -= app_start.tv_sec;
 	now->tv_usec -= app_start.tv_usec;
 }
+
+#if READ_DS18B20
+static esp_err_t ds18b20_temp (float *temp)
+{
+	*temp = 0.0;
+
+	DbgR (ds18b20_init (OW_PIN, NULL, reset_reason != DEEPSLEEP_RESET));
+	DbgR (ds18b20_get_temp (temp));
+	DbgR (ds18b20_convert ());
+	DbgR (ds18b20_depower ());
+
+	return ESP_OK;
+}
+#endif
 
 #if 000
 From include/rom/rtc.h:
@@ -151,8 +176,11 @@ typedef enum {
 
 static void format_msg (char *msg, int mlen)
 {
+	esp_err_t ret;
 	struct timeval now;
 	uint64_t us;
+	int len;
+	float T;
 
 	if (sleep_start_us > 0)
 		us = app_start_us - sleep_start_us;
@@ -162,40 +190,112 @@ static void format_msg (char *msg, int mlen)
 Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	sleep_start_us, app_start_us, app_start_us-sleep_start_us);
 
-#if READ_BME280
-	float T = bme280_temp();
+#if READ_DS18B20
+	Dbg (ds18b20_temp (&T));
+#elif READ_BME280
+	Dbg (bme280_temp (&T));
 	if (T > 85)
 		++failRead;
 #else
-	float T = 0;
+	T = 0;
 #endif
 
 	get_time (&now);
 
+	len = snprintf (msg, mlen,
+		"show esp-32a %d",
+		runCount);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	len = snprintf (msg, mlen,
+		" times=D%lld,s%u.%06u,w%.3f,t%u.%06u",
+		us,
+		(uint)app_start.tv_sec, (uint)app_start.tv_usec,
+		time_wifi_us / 1000000.,
+		(uint)now.tv_sec, (uint)now.tv_usec);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	len = snprintf (msg, mlen,
+		" prev=L%.3f,T%d",
+		timeLast / 1000000.,
+		(uint32_t)(timeTotal / 1000000));
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+    {
 	uint64_t ticks = rtc_time_get();		// raw RTC time
 	uint64_t RTC   = _get_rtc_time_us();		// adjusted rtc_time_get()
 	uint64_t FRC   = _get_time_since_boot();	// FRC
+	len = snprintf (msg, mlen,
+		" clocks=R%llu,F%llu,t%llu,g%d",
+		RTC, FRC, ticks, lastGrace);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+    }
 
-// times=s0.094,u0.045,r0.047,w0.070,F0.000,S0.010,d0.100,t0.301
-	snprintf (msg, mlen,
-		"show esp-32a %d times=D%lld,s%u.%06u,w%.3f,t%u.%06u clocks=R%llu,F%llu,t%llu,g%d stats=fs%d,fh%d,fr%d,c%03x,r%d radio=s%d %.2f",
-		n,
-/* times */	us,
-		(uint)app_start.tv_sec, (uint)app_start.tv_usec,
-		time_wifi_us / 1000000.,
-		(uint)now.tv_sec, (uint)now.tv_usec,
-/* clocks */	RTC, FRC, ticks, lastGrace,
-/* stats */	failSoft, failHard, failRead, wakeup_cause, reset_reason,
-/* radio */	-rssi,
-/* temp */	T);
-	++n;
+#if 000
+    {
+	esp_err_t ret;
+	double tmr_00_sec = 0;
+	Dbg (timer_get_counter_time_sec (0, 0, &tmr_00_sec));
+	double tmr_01_sec = 0;
+	Dbg (timer_get_counter_time_sec (0, 1, &tmr_01_sec)) ;
+	double tmr_10_sec = 0;
+	Dbg (timer_get_counter_time_sec (1, 0, &tmr_10_sec));
+	double tmr_11_sec = 0;
+	Dbg (timer_get_counter_time_sec (1, 1, &tmr_11_sec));
+	len = snprintf (msg, mlen,
+		" timers=%.6f,%.6f,%.6f,%.6f",
+		tmr_00_sec, tmr_01_sec, tmr_10_sec, tmr_11_sec);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+    }
+#endif
+
+	len = snprintf (msg, mlen,
+		" stats=fs%d,fh%d,fr%d,c%03x,r%d",
+		failSoft, failHard, failRead, wakeup_cause, reset_reason);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	len = snprintf (msg, mlen,
+		" adc=%.3f vdd=%.3f",
+		0.0, 3.3);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	len = snprintf (msg, mlen,
+		" radio=s%d %.2f",
+		-rssi, T);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	++runCount;
 }
 
 static void send_msg (void)
 {
 	int mysocket;
 	struct sockaddr_in remote_addr;
-	char msg[200];
+	char msg[500];
 
 	mysocket = socket(AF_INET, SOCK_DGRAM, 0);
 	remote_addr.sin_family = AF_INET;
@@ -205,7 +305,7 @@ static void send_msg (void)
 	format_msg (msg, sizeof(msg));
 
 Log ("Sending '%s'", msg);
-	toggle(1);
+	toggle(2);
 	sendto(mysocket, msg, strlen(msg), 0,
 		(struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
@@ -213,11 +313,11 @@ Log ("Sending '%s'", msg);
 static void do_grace (void)
 {
 #if defined(GRACE_MS) && GRACE_MS > 0
+	toggle(3);
 Log ("delay %dms", GRACE_MS);
-	toggle(1);
-	uint64_t ticks = rtc_time_get();
-	delay(GRACE_MS);	// time to send UDP message
-	lastGrace = (int)(rtc_time_get() - ticks);
+	uint64_t grace_us = _get_time_since_boot();
+	delay_ms (GRACE_MS);	// time to drain wifi queue
+	lastGrace = (int)(_get_time_since_boot() - grace_us);
 #endif
 }
 
@@ -239,8 +339,10 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 
 	uart_tx_wait_idle(CONFIG_CONSOLE_UART_NUM);
 
-	toggle(2);
+	toggle(4);
 	sleep_start_us = _get_time_since_boot();
+	timeLast = sleep_start_us - app_start_us;
+	timeTotal += timeLast;
 	esp_deep_sleep(SLEEP_S*1000000);
 }
 
@@ -278,6 +380,7 @@ Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d", rssi);
 }
 		break;
 	case SYSTEM_EVENT_STA_GOT_IP:
+		toggle(1);
 {
 char ip[16], nm[16], gw[16];
 Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
@@ -382,13 +485,57 @@ void app_main ()
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
 
+	Log ("Chip revision %d MAC %012llx", getChipRevision(), getChipMAC());
+
 	wakeup_cause = rtc_get_wakeup_cause();
 	reset_reason = rtc_get_reset_reason(0);
 
+// do we need a RTC_DATA_ATTR magic?
+
 #if READ_BME280
-	bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET);
+	esp_err_t ret;
+	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
 
 #endif
 	udp();
 }
+
+#if 000	///////////////////////////////// notes ///////////////////////////////
+
+adc
+===
+#include <driver/adc.h>
+
+#define ADC_CHANNEL	ADC1_CHANNEL_5
+#define ADC_WIDTH	ADC_WIDTH_12Bit
+#define ADC_ATTEN	ADC_ATTEN_11db
+
+//	gpio_set_direction(GPIO_NUM_27, GPIO_MODE_INPUT);			// ch5 = gpio33?
+	ret = adc1_config_width(ADC_WIDTH_12Bit);
+	ret = adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);	//VDD max
+	int adc = adc1_get_voltage(ADC_CHANNEL);
+
+	4.3 Ultra-Low-Noise Analog Pre-Amplifier
+	4.6 Temperature Sensor
+
+clock sources
+=============
+	32KHz crystal clock (external)
+		8KHz by /4
+	150KHz RC (internal)
+	8MHz (internal)
+		->31.25KHz by /256
+	4 GP timers - 64 bits
+	Main WDT
+	RTC WDT
+
+Drawing in the technical doco 3.2.1 shows the RTC can be clocked from
+slow:
+	RTC_CLK		150.00KHz
+	XTL32K_CLK	 32.00KHz
+	8M_D256_CLK	 31.25KHz
+fast:
+	RTC8M_CLK	8MHz
+	XTL_CLK/DIV
+#endif
 
