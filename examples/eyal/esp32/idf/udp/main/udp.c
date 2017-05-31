@@ -18,9 +18,7 @@
 #include <rom/uart.h>		// for uart_tx_wait_idle()
 #include <driver/timer.h>	// for timer_get_counter_time_sec()
 #include <soc/efuse_reg.h>	// needed by getChip*()
-
-#include "bme280.h"
-#include "ds18b20.h"
+#include <driver/adc.h>
 
 // best to provide the following in CFLAGS
 #ifndef AP_SSID
@@ -48,6 +46,7 @@
 
 #define READ_BME280	0	// enable when it starts working...
 #define READ_DS18B20	1
+#define READ_ADC	1
 
 #define I2C_SCL		22	// i2c
 #define I2C_SDA		21	// i2c
@@ -55,6 +54,25 @@
 #define OW_PIN		18	// ow
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
 #define DBG_PIN		15	// IN  pull low to silence Log()
+
+#define ADC_WIDTH	ADC_WIDTH_12Bit
+#define ADC_ATTEN	ADC_ATTEN_11db
+#define ADC_ATTEN_RATIO	(4095. / 3.6)
+#define VDD_CHANNEL	ADC1_CHANNEL_0	// GPIO 36
+#define BAT_CHANNEL	ADC1_CHANNEL_1	// GPIO 37
+#define BAT_DIVIDER	2.0
+
+#if READ_BME280
+#include "bme280.h"
+#endif
+
+#if READ_DS18B20
+#include "ds18b20.h"
+#endif
+
+#if READ_ADC
+#include "adc.h"
+#endif
 
 RTC_DATA_ATTR static int runCount = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
@@ -134,7 +152,7 @@ static esp_err_t ds18b20_temp (float *temp)
 
 	return ESP_OK;
 }
-#endif
+#endif // READ_DS18B20
 
 #if 000
 From include/rom/rtc.h:
@@ -181,6 +199,7 @@ static void format_msg (char *msg, int mlen)
 	uint64_t us;
 	int len;
 	float T;
+	float bat, vdd;
 
 	if (sleep_start_us > 0)
 		us = app_start_us - sleep_start_us;
@@ -197,8 +216,15 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	if (T > 85)
 		++failRead;
 #else
-	T = 0;
-#endif
+	T = 0.0;
+#endif // READ_BME280/READ_DS18B20
+
+#if READ_ADC
+	Dbg (read_adc (&bat, &vdd));
+#else
+	bat = 5.0;
+	vdd = 3.3;
+#endif // READ_ADC
 
 	get_time (&now);
 
@@ -274,7 +300,7 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 	len = snprintf (msg, mlen,
 		" adc=%.3f vdd=%.3f",
-		0.0, 3.3);
+		bat, vdd);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;
@@ -495,8 +521,8 @@ void app_main ()
 #if READ_BME280
 	esp_err_t ret;
 	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
+#endif // READ_BME280
 
-#endif
 	udp();
 }
 
