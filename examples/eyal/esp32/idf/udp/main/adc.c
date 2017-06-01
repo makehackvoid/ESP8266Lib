@@ -24,10 +24,10 @@
 //#define ADC_ATTEN_RATIO	(4095. / 3.548134)
 
 #define VDD_CHANNEL	ADC1_CHANNEL_4
-#define VDD_DIVIDER	3.59	// measured
+#define VDD_DIVIDER	3.065	// measured
 
 #define BAT_CHANNEL	ADC1_CHANNEL_5
-#define BAT_DIVIDER	2.98	// measured
+#define BAT_DIVIDER	2.99	// measured
 
 esp_err_t read_adc (float *bat, float *vdd)
 {

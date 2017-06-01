@@ -47,20 +47,15 @@
 #define READ_BME280	0	// enable when it starts working...
 #define READ_DS18B20	1
 #define READ_ADC	1
+#define PRINT_MSG	0	// print message when logging is off
 
 #define I2C_SCL		22	// i2c
 #define I2C_SDA		21	// i2c
 #define OUT_PIN		19	// OUT toggled to mark program steps
 #define OW_PIN		18	// ow
+#define ERROR_PIN	17	// indicate a failure (debug)
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
 #define DBG_PIN		15	// IN  pull low to silence Log()
-
-#define ADC_WIDTH	ADC_WIDTH_12Bit
-#define ADC_ATTEN	ADC_ATTEN_11db
-#define ADC_ATTEN_RATIO	(4095. / 3.6)
-#define VDD_CHANNEL	ADC1_CHANNEL_0	// GPIO 36
-#define BAT_CHANNEL	ADC1_CHANNEL_1	// GPIO 37
-#define BAT_DIVIDER	2.0
 
 #if READ_BME280
 #include "bme280.h"
@@ -115,6 +110,13 @@ static uint64_t getChipMAC (void)
 	return mac;
 }
 
+static void toggle_setup (void)
+{
+	gpio_pad_select_gpio(OUT_PIN);
+	gpio_set_direction(OUT_PIN, GPIO_MODE_OUTPUT);
+	gpio_set_level(OUT_PIN, 1);	// start HIGH
+}
+
 // pin is LOW  during sleep
 // pin is HIGH at start
 // toggle is 100us: 50us LOW, 50us HIGH (not on final time)
@@ -126,6 +128,15 @@ void toggle(int ntimes) {
 		if (ntimes)
 			delay_us (50);
 	}
+}
+
+static void toggle_error (void)
+{
+	gpio_pad_select_gpio(ERROR_PIN);
+	gpio_set_direction(ERROR_PIN, GPIO_MODE_OUTPUT);
+	gpio_set_level(ERROR_PIN, 1);	// start HIGH
+	delay_us (50);
+	gpio_set_level(ERROR_PIN, 0);
 }
 
 void get_time (struct timeval *now)
@@ -145,9 +156,14 @@ static esp_err_t ds18b20_temp (float *temp)
 {
 	*temp = 0.0;
 
-	DbgR (ds18b20_init (OW_PIN, NULL, reset_reason != DEEPSLEEP_RESET));
-	DbgR (ds18b20_get_temp (temp));
-	DbgR (ds18b20_convert ());
+	DbgR (ds18b20_init (OW_PIN, NULL));
+	if (reset_reason != DEEPSLEEP_RESET) {	// cold start
+		DbgR (ds18b20_convert (1));
+		DbgR (ds18b20_get_temp (temp));
+	} else {
+		DbgR (ds18b20_get_temp (temp));
+		DbgR (ds18b20_convert (0));
+	}
 	DbgR (ds18b20_depower ());
 
 	return ESP_OK;
@@ -192,11 +208,13 @@ typedef enum {
 } RESET_REASON;		// from rtc_get_reset_reason()
 #endif
 
-static void format_msg (char *msg, int mlen)
+static void format_msg (char *buf, int buflen)
 {
 	esp_err_t ret;
 	struct timeval now;
 	uint64_t us;
+	char *msg = buf;
+	int mlen = buflen;
 	int len;
 	float T;
 	float bat, vdd;
@@ -211,10 +229,17 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 #if READ_DS18B20
 	Dbg (ds18b20_temp (&T));
+	if (ret != ESP_OK || T >= 85) {
+		toggle_error();		// trigger DSO
+		++failRead;
+		T = 85.0;
+	}
 #elif READ_BME280
 	Dbg (bme280_temp (&T));
-	if (T > 85)
+	if (ret != ESP_OK || T >= 85) {
 		++failRead;
+		T = 85.0;
+	}
 #else
 	T = 0.0;
 #endif // READ_BME280/READ_DS18B20
@@ -313,6 +338,14 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 		msg += len;
 		mlen -= len;
 	}
+
+#if PRINT_MSG
+	if (!do_log) {
+		printf ("%s\n", msg);
+		fflush(stdout);
+		uart_tx_wait_idle(CONFIG_CONSOLE_UART_NUM);
+	}
+#endif
 
 	++runCount;
 }
@@ -494,12 +527,8 @@ void app_main ()
 	gpio_set_direction(TOGGLE_PIN, GPIO_MODE_INPUT);
 	gpio_pullup_en(TOGGLE_PIN);
 	do_toggle = gpio_get_level(TOGGLE_PIN);
-	if (do_toggle) {
-		gpio_pad_select_gpio(OUT_PIN);
-		gpio_set_direction(OUT_PIN, GPIO_MODE_OUTPUT);
-		gpio_set_level(OUT_PIN, 1);	// mark app start
-
-	}
+	if (do_toggle)
+		toggle_setup();
 
 	gpio_pad_select_gpio(DBG_PIN);
 	gpio_set_direction(DBG_PIN, GPIO_MODE_INPUT);

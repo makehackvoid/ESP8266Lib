@@ -31,7 +31,7 @@
 #include "onewire.h"
 
 #define ONEWIRE_INTERNAL_PULLUP	1	// 0=using external pullup
-#define ONEWIRE_POWERED		1
+#define ONEWIRE_POWERED		0
 #define ONEWIRE_CRC		1
 #define ONEWIRE_CRC8_TABLE	1
 #define ONEWIRE_CRC16		1
@@ -53,10 +53,10 @@ toggle(2);	// DEBUG
 		gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
 		gpio_set_level (ow_pin, 0);
-		ets_delay_us (2);
+		ets_delay_us (5);
 
 		if (data & 1) gpio_set_level (ow_pin, 1);
-		ets_delay_us (58);
+		ets_delay_us (60-5);
 
 #if ONEWIRE_POWERED
 		gpio_set_level (ow_pin, 1);
@@ -83,16 +83,29 @@ toggle(3);	// DEBUG
 	for (i = 0; i < n; ++i) {
 		gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 		gpio_set_level(ow_pin,0);
-		ets_delay_us(2);
+		ets_delay_us(5);
 
 		gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
-		ets_delay_us(12);	// measured: data ready in 4us, gone in 28us
+		ets_delay_us(8);	// measured: data ready in 4us, gone in 28us
 		d |= gpio_get_level (ow_pin) << i;
 
-		ets_delay_us (48+1);	// for 60us read time slot + 1us recovery
+		ets_delay_us ((60-5-8)+1);	// for 60us read time slot + 1us recovery
 	}
 
 	*data = d;
+	return ESP_OK;
+}
+
+esp_err_t ow_wait_for_high (int us)
+{
+	int count;
+
+	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
+	for (count = 0; !gpio_get_level (ow_pin); count += 5) {
+		if (count > us) return ESP_FAIL;
+		ets_delay_us(5);
+	}
+
 	return ESP_OK;
 }
 
@@ -101,6 +114,8 @@ esp_err_t ow_reset(void)
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
 
 toggle(1);	// DEBUG
+	// wait up to 480us for line to float
+	DbgR (ow_wait_for_high (480));		// 480us
 	gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 	gpio_set_level(ow_pin, 0);
 	ets_delay_us(480);
@@ -121,7 +136,7 @@ esp_err_t ow_depower (void)
 	return ESP_OK;
 }
 
-esp_err_t ow_init (uint8_t pin, int first)
+esp_err_t ow_init (uint8_t pin)
 {
 	esp_err_t ret;
 
@@ -129,13 +144,11 @@ esp_err_t ow_init (uint8_t pin, int first)
 	gpio_pad_select_gpio(ow_pin);
 
 #if ONEWIRE_INTERNAL_PULLUP
-	if (1 || first) {	// pullup not kept across a deep sleep
-		gpio_set_pull_mode(ow_pin, GPIO_PULLUP_ONLY);
-		ets_delay_us(480);	// skip unintended ds18b20 RESET response
-	}
+	gpio_set_pull_mode(ow_pin, GPIO_PULLUP_ONLY);
 #endif
+	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
 
-	ret = ow_reset();
+	Dbg (ow_reset());
 	if (ESP_OK != ret)
 		ow_pin = OW_NO_PIN;
 

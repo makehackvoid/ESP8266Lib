@@ -76,11 +76,13 @@ esp_err_t ds18b20_get_temp(float *temp)
 	return ESP_OK;
 }
 
-esp_err_t ds18b20_convert (void)
+esp_err_t ds18b20_convert (int wait)
 {
 	if(!inited) return ESP_FAIL;
 
 	DbgR (ds18b20_send_command (DS18B20_CONVERT_T));
+	if (wait)
+		DbgR (ow_wait_for_high (750*1000));	// 750ms
 
 	return ESP_OK;
 }
@@ -92,18 +94,12 @@ esp_err_t ds18b20_depower (void)
 	return ESP_OK;
 }
 
-esp_err_t ds18b20_init (uint8_t pin, uint8_t *id, int first)
+esp_err_t ds18b20_init (uint8_t pin, uint8_t *id)
 {
-	DbgR (ow_init (pin, first));
+	DbgR (ow_init (pin));
 
 	rom_id = id;	// NULL to ignore id
-
 	inited = 1;
-
-	if (first) {
-		DbgR (ds18b20_convert ());
-		delay_ms (750);
-	}
 
 	return ESP_OK;
 }
