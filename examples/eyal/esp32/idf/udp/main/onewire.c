@@ -39,17 +39,31 @@
 #define OW_NO_PIN		0xFF
 static uint8_t ow_pin = OW_NO_PIN;
 
-esp_err_t ow_write (int n, uint8_t data)	// 8 bits is enough here
+// the wire is always in INPUT mode here.
+static esp_err_t ow_wait_for_high (int us)
+{
+	for (; !gpio_get_level (ow_pin); us -= 5) {
+		if (us < 0) return ESP_FAIL;
+		ets_delay_us(5);
+	}
+
+	return ESP_OK;
+}
+
+esp_err_t ow_write_bits (int nbits, uint8_t data)	// 8 bits is enough now
 {
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
+	if (nbits < 0 || nbits > 8) DbgR (ESP_FAIL);
 
 toggle(2);	// DEBUG
 
 #if ONEWIRE_POWERED
+	DbgR (ow_wait_for_high (60));	// 60us
 	gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
-	for (; n-- > 0; data >>= 1) {
+	for (; nbits-- > 0; data >>= 1) {
 #if !ONEWIRE_POWERED
+		DbgR (ow_wait_for_high (60));	// 60us
 		gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
 		gpio_set_level (ow_pin, 0);
@@ -68,43 +82,41 @@ toggle(2);	// DEBUG
 #if ONEWIRE_POWERED
 	gpio_set_direction (ow_pin, GPIO_MODE_INPUT);
 #endif
+	DbgR (ow_wait_for_high (60));	// 60us
 
 	return ESP_OK;
 }
 
-esp_err_t ow_read (int n, uint8_t *data)	// 8 bits is enough here
+esp_err_t ow_read_bits (int nbits, uint8_t *data)
 {
-	uint8_t d = 0;
-	int i;
+	int i, b;
+	uint8_t d = 0;	// stupid compiler wants this...
 
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
+	if (nbits < 0) DbgR (ESP_FAIL);
 
 toggle(3);	// DEBUG
-	for (i = 0; i < n; ++i) {
+	for (i = 0, b = 0; i < nbits; ++i, ++b) {
+		if (8 == b) {
+			b = 0;
+			*data++ = d;
+			d = 0;
+		}
+		DbgR (ow_wait_for_high (60));	// 60us
 		gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 		gpio_set_level(ow_pin,0);
 		ets_delay_us(5);
 
 		gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
 		ets_delay_us(8);	// measured: data ready in 4us, gone in 28us
-		d |= gpio_get_level (ow_pin) << i;
+		d |= gpio_get_level (ow_pin) << b;
 
 		ets_delay_us ((60-5-8)+1);	// for 60us read time slot + 1us recovery
 	}
+	DbgR (ow_wait_for_high (60));	// 60us
 
-	*data = d;
-	return ESP_OK;
-}
-
-esp_err_t ow_wait_for_high (int us)
-{
-	int count;
-
-	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
-	for (count = 0; !gpio_get_level (ow_pin); count += 5) {
-		if (count > us) return ESP_FAIL;
-		ets_delay_us(5);
-	}
+	if (b > 0)	// last partial byte
+		*data = d;
 
 	return ESP_OK;
 }
@@ -114,7 +126,6 @@ esp_err_t ow_reset(void)
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
 
 toggle(1);	// DEBUG
-	// wait up to 480us for line to float
 	DbgR (ow_wait_for_high (480));		// 480us
 	gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 	gpio_set_level(ow_pin, 0);

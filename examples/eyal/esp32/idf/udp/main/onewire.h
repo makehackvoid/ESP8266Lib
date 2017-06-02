@@ -1,12 +1,13 @@
 #ifndef _ONEWIRE_H
 #define _ONEWIRE_H
 
-#define ow_read_byte(data)	ow_read(8, data)
-#define ow_write_byte(data)	ow_write(8, data)
+#define ow_read_bytes(n, data)	ow_read_bits((n)*8, data)
+#define ow_read_byte(data)	ow_read_bytes(1, data)
 
-esp_err_t ow_write (int n, uint8_t data);
-esp_err_t ow_read (int n, uint8_t *data);
-esp_err_t ow_wait_for_high (int us);
+#define ow_write_byte(data)	ow_write_bits(8, data)
+
+esp_err_t ow_write_bits (int nbits, uint8_t data);
+esp_err_t ow_read_bits (int nbits, uint8_t *data);
 esp_err_t ow_reset(void);
 esp_err_t ow_depower (void);
 esp_err_t ow_init (uint8_t pin);

@@ -74,6 +74,7 @@ RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 RTC_DATA_ATTR static int failSoft = 0;
 RTC_DATA_ATTR static int failHard = 0;
 RTC_DATA_ATTR static int failRead = 0;
+RTC_DATA_ATTR static int failReadHard = 0;
 RTC_DATA_ATTR static int lastGrace = 0;
 RTC_DATA_ATTR static uint64_t timeLast = 0;
 RTC_DATA_ATTR static uint64_t timeTotal = 0;
@@ -157,13 +158,13 @@ static esp_err_t ds18b20_temp (float *temp)
 	*temp = 0.0;
 
 	DbgR (ds18b20_init (OW_PIN, NULL));
-	if (reset_reason != DEEPSLEEP_RESET) {	// cold start
+
+	if (reset_reason != DEEPSLEEP_RESET)	// cold start
 		DbgR (ds18b20_convert (1));
-		DbgR (ds18b20_get_temp (temp));
-	} else {
-		DbgR (ds18b20_get_temp (temp));
+	DbgR (ds18b20_get_temp (temp));
+	if (reset_reason == DEEPSLEEP_RESET)	// deep sleep wakeup
 		DbgR (ds18b20_convert (0));
-	}
+
 	DbgR (ds18b20_depower ());
 
 	return ESP_OK;
@@ -230,9 +231,13 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 #if READ_DS18B20
 	Dbg (ds18b20_temp (&T));
 	if (ret != ESP_OK || T >= 85) {
-		toggle_error();		// trigger DSO
-		++failRead;
-		T = 85.0;
+		Dbg (ds18b20_temp (&T));	// one retry
+		if (ret != ESP_OK || T >= 85) {
+			toggle_error();		// tell DSO
+			++failReadHard;
+			T = 85.0;
+		} else
+			++failRead;
 	}
 #elif READ_BME280
 	Dbg (bme280_temp (&T));
@@ -316,8 +321,8 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 #endif
 
 	len = snprintf (msg, mlen,
-		" stats=fs%d,fh%d,fr%d,c%03x,r%d",
-		failSoft, failHard, failRead, wakeup_cause, reset_reason);
+		" stats=fs%d,fh%d,fr%d,fR%d,c%03x,r%d",
+		failSoft, failHard, failRead, failReadHard, wakeup_cause, reset_reason);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;
