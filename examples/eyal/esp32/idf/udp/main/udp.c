@@ -44,7 +44,9 @@
 #define USE_DHCPC	0	// 0=no, use static IP
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
 
-#define READ_BME280	0	// enable when it starts working...
+#define RUN_AS_TASK	1
+
+#define READ_BME280	1	// enable when it starts working...
 #define READ_DS18B20	1
 #define READ_ADC	1
 #define PRINT_MSG	0	// print message when logging is off
@@ -63,6 +65,8 @@
 
 #if READ_DS18B20
 #include "ds18b20.h"
+  #define ROM_ID	NULL
+//#define ROM_ID	(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"
 #endif
 
 #if READ_ADC
@@ -155,12 +159,19 @@ void get_time (struct timeval *now)
 #if READ_DS18B20
 static esp_err_t ds18b20_temp (float *temp)
 {
+	uint8_t id[8];
+
 	*temp = 0.0;
 
-	DbgR (ds18b20_init (OW_PIN, NULL));
+	DbgR (ds18b20_init (OW_PIN, ROM_ID));
 
-	if (reset_reason != DEEPSLEEP_RESET)	// cold start
+	if (reset_reason != DEEPSLEEP_RESET) {	// cold start
+		DbgR (ds18b20_read_id (id));
+		Log("ROM id: %02x %02x %02x %02x %02x %02x %02x %02x",
+			id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
+
 		DbgR (ds18b20_convert (1));
+	}
 	DbgR (ds18b20_get_temp (temp));
 	if (reset_reason == DEEPSLEEP_RESET)	// deep sleep wakeup
 		DbgR (ds18b20_convert (0));
@@ -217,7 +228,9 @@ static void format_msg (char *buf, int buflen)
 	char *msg = buf;
 	int mlen = buflen;
 	int len;
-	float T;
+	float T, temps[2];
+	int ntemps;
+	int i;
 	float bat, vdd;
 
 	if (sleep_start_us > 0)
@@ -228,6 +241,7 @@ static void format_msg (char *buf, int buflen)
 Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	sleep_start_us, app_start_us, app_start_us-sleep_start_us);
 
+	ntemps = 0;
 #if READ_DS18B20
 	Dbg (ds18b20_temp (&T));
 	if (ret != ESP_OK || T >= 85) {
@@ -239,15 +253,18 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 		} else
 			++failRead;
 	}
-#elif READ_BME280
+	temps[ntemps++] = T;
+#endif // READ_DS18B20
+
+#if READ_BME280
 	Dbg (bme280_temp (&T));
 	if (ret != ESP_OK || T >= 85) {
+		toggle_error();		// tell DSO
 		++failRead;
 		T = 85.0;
 	}
-#else
-	T = 0.0;
-#endif // READ_BME280/READ_DS18B20
+	temps[ntemps++] = T;
+#endif // READ_BME280
 
 #if READ_ADC
 	Dbg (read_adc (&bat, &vdd));
@@ -337,11 +354,21 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	}
 
 	len = snprintf (msg, mlen,
-		" radio=s%d %.2f",
-		-rssi, T);
+		" radio=s%d",
+		-rssi);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;
+	}
+
+	for (i = 0; i < ntemps; ++i) {
+		len = snprintf (msg, mlen,
+			"%c%.2f",
+			(i ? ',' : ' '), temps[i]);
+		if (len > 0) {
+			msg += len;
+			mlen -= len;
+		}
 	}
 
 #if PRINT_MSG
@@ -408,6 +435,9 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 	timeLast = sleep_start_us - app_start_us;
 	timeTotal += timeLast;
 	esp_deep_sleep(SLEEP_S*1000000);
+#if RUN_AS_TASK
+	vTaskDelete(NULL);
+#endif
 }
 
 static void set_ip (void)
@@ -481,7 +511,7 @@ Log ("ignoring SYSTEM_EVENT %d", event->event_id);
 	return ESP_OK;
 }
 
-static void udp(void)
+static void udp(void *param)
 {
 #if 000		// no effect
 Log ("esp_phy_load_cal_and_init");
@@ -557,24 +587,18 @@ void app_main ()
 	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
 #endif // READ_BME280
 
-	udp();
+#if RUN_AS_TASK
+	udp(NULL);
+#else
+	xTaskCreate(udp, "udp", 40960, NULL, 20, NULL);
+	while (1) vTaskDelay(5000/portTICK_PERIOD_MS);	// in 5s we will sleep anyway
+#endif
 }
 
 #if 000	///////////////////////////////// notes ///////////////////////////////
 
 adc
 ===
-#include <driver/adc.h>
-
-#define ADC_CHANNEL	ADC1_CHANNEL_5
-#define ADC_WIDTH	ADC_WIDTH_12Bit
-#define ADC_ATTEN	ADC_ATTEN_11db
-
-//	gpio_set_direction(GPIO_NUM_27, GPIO_MODE_INPUT);			// ch5 = gpio33?
-	ret = adc1_config_width(ADC_WIDTH_12Bit);
-	ret = adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);	//VDD max
-	int adc = adc1_get_voltage(ADC_CHANNEL);
-
 	4.3 Ultra-Low-Noise Analog Pre-Amplifier
 	4.6 Temperature Sensor
 
@@ -597,5 +621,16 @@ slow:
 fast:
 	RTC8M_CLK	8MHz
 	XTL_CLK/DIV
+
+xTaskCreatePinnedToCore(&bleAdvtTask, "bleAdvtTask", 2048, NULL, 5, NULL, 0);
+vTaskDelete(NULL);
+
+xTaskCreate(eth_task, "eth_task", 2048, NULL, (tskIDLE_PRIORITY + 2), NULL);
+xTaskCreate(&blink_task, "blink_task", 512, NULL, 5, NULL);
+
+TaskHandle_t tx_rx_task;
+xTaskCreate(&send_data, "send_data", 4096, NULL, 4, &tx_rx_task);
+vTaskDelete(tx_rx_task);
+
 #endif
 

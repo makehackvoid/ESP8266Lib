@@ -46,7 +46,12 @@ if (do_log) do { \
 	if (LOG_FLUSH) fflush(stdout); \
 } while (0)
 
-#define delay_ms(ms)	vTaskDelay(ms / portTICK_PERIOD_MS)
 #define delay_us(us)	ets_delay_us (us)
+#define delay_ms(ms) \
+do { \
+	int __ms__ = (ms); \
+	while (__ms__-- > 0) \
+		delay_us (1000); \
+} while (0)
 
 #endif // _UDP_H

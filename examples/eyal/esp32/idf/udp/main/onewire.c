@@ -31,8 +31,8 @@
 #include "onewire.h"
 
 #define ONEWIRE_INTERNAL_PULLUP	1	// 0=using external pullup
-#define ONEWIRE_POWERED		0
-#define ONEWIRE_CRC		1
+#define ONEWIRE_POWERED		0	// do not enable
+#define ONEWIRE_CRC		1	// do not disable
 #define ONEWIRE_CRC8_TABLE	1
 #define ONEWIRE_CRC16		1
 
@@ -50,10 +50,13 @@ static esp_err_t ow_wait_for_high (int us)
 	return ESP_OK;
 }
 
-esp_err_t ow_write_bits (int nbits, uint8_t data)	// 8 bits is enough now
+esp_err_t ow_write_bits (int nbits, uint8_t *data)
 {
+	int i, b;
+	uint8_t d;
+
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
-	if (nbits < 0 || nbits > 8) DbgR (ESP_FAIL);
+	if (nbits < 0) DbgR (ESP_FAIL);
 
 toggle(2);	// DEBUG
 
@@ -61,7 +64,12 @@ toggle(2);	// DEBUG
 	DbgR (ow_wait_for_high (60));	// 60us
 	gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
-	for (; nbits-- > 0; data >>= 1) {
+	d = *data++;
+	for (i = 0, b = 0; i < nbits; ++i, ++b, d >>= 1) {
+		if (8 == b) {
+			b = 0;
+			d = *data++;
+		}
 #if !ONEWIRE_POWERED
 		DbgR (ow_wait_for_high (60));	// 60us
 		gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
@@ -69,7 +77,7 @@ toggle(2);	// DEBUG
 		gpio_set_level (ow_pin, 0);
 		ets_delay_us (5);
 
-		if (data & 1) gpio_set_level (ow_pin, 1);
+		if (d & 1) gpio_set_level (ow_pin, 1);
 		ets_delay_us (60-5);
 
 #if ONEWIRE_POWERED
@@ -104,7 +112,7 @@ toggle(3);	// DEBUG
 		}
 		DbgR (ow_wait_for_high (60));	// 60us
 		gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
-		gpio_set_level(ow_pin,0);
+		gpio_set_level(ow_pin, 0);
 		ets_delay_us(5);
 
 		gpio_set_direction(ow_pin, GPIO_MODE_INPUT);

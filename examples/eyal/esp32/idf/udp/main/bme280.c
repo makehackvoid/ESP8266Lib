@@ -167,14 +167,14 @@ static int32_t bme280_compensate_T (int32_t adc_T)
 
 static esp_err_t i2c_bme280_startreadout (int read_delay_ms)
 {
-	if (read_delay_ms <= 0)
+	if (read_delay_ms <= 0)		// 0 means default delay
 		read_delay_ms = BME280_SAMPLING_DELAY;
 
 	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL_HUM, bme280_ossh));
 	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL, (bme280_mode & 0xFC) | BME280_FORCED_MODE));
 
-	if (read_delay_ms > 10)
-		delay (read_delay_ms);
+	if (read_delay_ms > 1)		// 1 means no delay
+		delay_ms (read_delay_ms);
 
 	return ESP_OK;
 }
@@ -198,7 +198,7 @@ esp_err_t bme280_temp (float *temp)
 	} else {
 //		DbgR (i2c_bme280_startreadout (200));
 		memset (buf, 0, sizeof (buf));
-		ret = i2c_bme280_read (buf, sizeof(buf));
+		Dbg (i2c_bme280_read (buf, sizeof(buf)));
 		if (ret != ESP_OK) {
 			adc_T = 9998;
 			ret = ESP_FAIL;
@@ -236,15 +236,15 @@ static esp_err_t i2c_bme280_setup(
 	uint8_t const bit2 = 0b11;
 
 	bme280_mode =
-		(p4&bit2) |		// 4-th parameter: power mode
-		(p2&bit3 << 2) |	// 2-nd parameter: pressure oversampling
-		(p1&bit3 << 5);		// 1-st parameter: temperature oversampling
+		((p4&bit2)) |		// 4-th parameter: power mode
+		((p2&bit3) << 2) |	// 2-nd parameter: pressure oversampling
+		((p1&bit3) << 5);	// 1-st parameter: temperature oversampling
 		
 	bme280_ossh = p3&bit3;		// 3-rd parameter: humidity oversampling
 	
 	config = 
-		(p5&bit3 << 5) |	// 5-th parameter: inactive duration in normal mode
-		(p6&bit3 << 2);		// 6-th parameter: IIR filter
+		((p5&bit3) << 5) |	// 5-th parameter: inactive duration in normal mode
+		((p6&bit3) << 2);	// 6-th parameter: IIR filter
 	
 	DbgR (i2c_read_bytes (BME280_I2C_ADDR, BME280_REGISTER_CHIPID, buf, 1));
 	uint8_t chipid = (uint8_t)buf[0];
@@ -283,8 +283,8 @@ static esp_err_t i2c_bme280_setup(
 		reg = buf;
 		bme280_data.dig_H2 = r16sLE_buf(reg); reg+=2;
 		bme280_data.dig_H3 = reg[0]; reg++;
-		bme280_data.dig_H4 = (int16_t)reg[0] << 4 | (reg[1] & 0x0F); reg+=1;	// H4[11:4 3:0] = 0xE4[7:0] 0xE5[3:0] 12-bit signed
-		bme280_data.dig_H5 = (int16_t)reg[1] << 4 | (reg[0]   >> 4); reg+=2;	// H5[11:4 3:0] = 0xE6[7:0] 0xE5[7:4] 12-bit signed
+		bme280_data.dig_H4 = (int16_t)(reg[0]) << 4 | (reg[1] & 0x0F); reg+=1;	// H4[11:4 3:0] = 0xE4[7:0] 0xE5[3:0] 12-bit signed
+		bme280_data.dig_H5 = (int16_t)(reg[1]) << 4 | (reg[0] >> 4); reg+=2;	// H5[11:4 3:0] = 0xE6[7:0] 0xE5[7:4] 12-bit signed
 		bme280_data.dig_H6 = (int8_t)reg[0];
 
 		if (full_init)

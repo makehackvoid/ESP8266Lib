@@ -14,8 +14,9 @@
 */
 
 /*
+ no support for DS18S20
  no ow search
- Only reading temp supported
+ Only reading temp (12 bits) supported
  Does not deal with parasitic power properly
 */
 
@@ -39,21 +40,27 @@
 #define DS18B20_READ_POWER_SUPPLY	0xB4
 
 static int inited = 0;
-static uint8_t *rom_id = NULL;
+static uint8_t rom_id[8] = {0};
 
 static esp_err_t ds18b20_send_command(uint8_t cmd)
 {
+	uint8_t	b[1];
+
 	DbgR (ow_reset());
 
-	if (NULL != rom_id) {
-		int i;
-		DbgR (ow_write_byte(DS18B20_MATCH_ROM));
-		for (i = 0; i < 8; ++i)
-			DbgR (ow_write_byte(rom_id[i]));
-	} else
-		DbgR (ow_write_byte(DS18B20_SKIP_ROM));
+	if (DS18B20_READ_ROM == cmd)
+		{}
+	else if (0 != rom_id[0]) {
+		b[0] = DS18B20_MATCH_ROM;
+		DbgR (ow_write_byte(b));
+		DbgR (ow_write_bytes(8, rom_id));
+	} else {
+		b[0] = DS18B20_SKIP_ROM;
+		DbgR (ow_write_byte(b));
+	}
 
-	DbgR (ow_write_byte(cmd));
+	b[0] = cmd;
+	DbgR (ow_write_byte(b));
 
 	return ESP_OK;
 }
@@ -75,7 +82,7 @@ esp_err_t ds18b20_get_temp(float *temp)
 	uint8_t scratchpad[9];
 
 	*temp = 0.0;
-	DbgR (ds18b20_read_scratchpad(&scratchpad));
+	DbgR (ds18b20_read_scratchpad(scratchpad));
 	*temp = ((scratchpad[1]<<8) | scratchpad[0]) / 16.0;
 
 	return ESP_OK;
@@ -89,12 +96,12 @@ esp_err_t ds18b20_convert (int wait)
 
 	if (wait) {
 		uint8_t ready;
-		int us = 750;
+		int ms = 750;
 
 		do {
-			if (--us < 0) DbgR (ESP_FAIL);
+			if (ms-- <= 0) DbgR (ESP_FAIL);
+			delay_ms (1);
 			DbgR (ow_read_bits (1, &ready));
-			delay_us (1000);	// 1ms OK?
 		} while (!ready);
 	}
 
@@ -108,14 +115,25 @@ esp_err_t ds18b20_depower (void)
 	return ESP_OK;
 }
 
+esp_err_t ds18b20_read_id (uint8_t *id)
+{
+	DbgR (ds18b20_send_command (DS18B20_READ_ROM));
+	DbgR (ow_read_bytes (8, id));
+	if (id[7] != onewire_crc8(id, 7)) DbgR (ESP_FAIL);
+
+	return ESP_OK;
+}
+
 esp_err_t ds18b20_init (uint8_t pin, uint8_t *id)
 {
 	DbgR (ow_init (pin));
 
-	if (NULL != id)
+	if (NULL != id) {
 		if (id[7] != onewire_crc8(id, 7)) DbgR (ESP_FAIL);
+		if (id[0] != 0x28) DbgR (ESP_FAIL);	// not a ds18b20
+		memcpy (rom_id, id, 8);
+	}
 
-	rom_id = id;	// NULL to ignore id. Not yet used.
 	inited = 1;
 
 	return ESP_OK;
