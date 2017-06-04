@@ -232,6 +232,7 @@ static void format_msg (char *buf, int buflen)
 	int ntemps;
 	int i;
 	float bat, vdd;
+	char weather[40];
 
 	if (sleep_start_us > 0)
 		us = app_start_us - sleep_start_us;
@@ -257,13 +258,20 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 #endif // READ_DS18B20
 
 #if READ_BME280
-	Dbg (bme280_temp (&T));
+	float qfe, h;
+	int fail = 0;
+
+	Dbg (bme280_read (660, &T, &qfe, &h, NULL));
 	if (ret != ESP_OK || T >= 85) {
 		toggle_error();		// tell DSO
 		++failRead;
-		T = 85.0;
 	}
 	temps[ntemps++] = T;
+	snprintf (weather, sizeof(weather),
+		" w=T%.2f,P%.3f,H%.3f,f%x"	,
+		T, qfe, h, fail);
+#else
+	weather[0] = '\0';
 #endif // READ_BME280
 
 #if READ_ADC
@@ -340,6 +348,14 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	len = snprintf (msg, mlen,
 		" stats=fs%d,fh%d,fr%d,fR%d,c%03x,r%d",
 		failSoft, failHard, failRead, failReadHard, wakeup_cause, reset_reason);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+
+	len = snprintf (msg, mlen,
+		"%s",
+		weather);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;

@@ -4,6 +4,7 @@
 
 #include "udp.h"
 #include "bme280.h"
+#include "bme280-cal.h"
 
 #include <driver/i2c.h>
 
@@ -14,13 +15,15 @@
 
 #define	BME280_I2C_ADDR			0x76	// or 0x77 with SDO to GND
 
+#define BME280_REGISTER_STATUS		0xF3
 #define BME280_REGISTER_CONTROL		0xF4
 #define BME280_REGISTER_CONTROL_HUM	0xF2
 #define BME280_REGISTER_CONFIG		0xF5
 #define BME280_REGISTER_CHIPID		0xD0
 #define BME280_REGISTER_VERSION		0xD1
 #define BME280_REGISTER_SOFTRESET	0xE0
-#define BME280_REGISTER_CAL26		0xE1
+#define BME280_REGISTER_CAL00		0x88	// 0x88-0xA1
+#define BME280_REGISTER_CAL26		0xE1	// 0xE1-0xF0
 #define BME280_REGISTER_PRESS		0xF7	// 0xF7-0xF9
 #define BME280_REGISTER_TEMP		0xFA	// 0xFA-0xFC
 #define BME280_REGISTER_HUM		0xFD	// 0xFD-0xFE
@@ -39,35 +42,10 @@
 #define ACK_VAL				0
 #define NAK_VAL				1
 
-#define BME280_S32_t	int32_t
-#define BME280_U32_t	uint32_t
-#define BME280_S64_t	int64_t
-
 #define BME280_SAMPLING_DELAY		113	// maximum measurement time in ms for maximum
 	// oversampling for all measures = 1.25 + 2.3*16 + 2.3*16 + 0.575 + 2.3*16 + 0.575 ms
 
-static struct {
-	uint16_t  dig_T1;
-	int16_t   dig_T2;
-	int16_t   dig_T3;
-	uint16_t  dig_P1;
-	int16_t   dig_P2;
-	int16_t   dig_P3;
-	int16_t   dig_P4;
-	int16_t   dig_P5;
-	int16_t   dig_P6;
-	int16_t   dig_P7;
-	int16_t   dig_P8;
-	int16_t   dig_P9;
-	uint8_t   dig_H1;
-	int16_t   dig_H2;
-	uint8_t   dig_H3;
-	int16_t   dig_H4;
-	int16_t   dig_H5;
-	int8_t    dig_H6;
-} bme280_data;
-
-static BME280_S32_t bme280_t_fine;	// not yet used
+static struct bme280_data bme280_data;
 
 static i2c_port_t i2c_num = I2C_NUM;
 static uint8_t bme280_isbme = 0;	// 1 if BME280, 0 if BMP280
@@ -112,6 +90,7 @@ static esp_err_t i2c_read_bytes(
 
 // send address read request
 	cmd = i2c_cmd_link_create();
+
 	DbgR (i2c_master_start(cmd));
 	DbgR (i2c_master_address (cmd, addr, I2C_MASTER_WRITE));
 	DbgR (i2c_master_write_byte(cmd, reg, ACK_CHECK_EN));
@@ -128,7 +107,8 @@ static esp_err_t i2c_read_bytes(
 		DbgR (i2c_master_read(cmd, buf, buflen-1, ACK_VAL));
 	DbgR (i2c_master_read_byte(cmd, buf+buflen-1, NAK_VAL));
 	DbgR (i2c_master_stop(cmd));
-	Dbg  (i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_RATE_MS));
+
+	Dbg  (i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS));
 	i2c_cmd_link_delete(cmd);
 	if (ESP_OK != ret) return ret;
 
@@ -147,34 +127,29 @@ static esp_err_t i2c_write_byte(
         DbgR (i2c_master_write_byte(cmd, reg, ACK_CHECK_EN));
         DbgR (i2c_master_write_byte(cmd, val, ACK_CHECK_EN));
         DbgR (i2c_master_stop(cmd));
-	Dbg  (i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_RATE_MS));
+	Dbg  (i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS));
 	i2c_cmd_link_delete(cmd);
 
 	return ret;
 }
 
-static int32_t bme280_compensate_T (int32_t adc_T)
+static esp_err_t i2c_bme280_startreadout (int wait)
 {
-	BME280_S32_t var1, var2, T;
-
-	var1  = ((((adc_T>>3) - ((BME280_S32_t)bme280_data.dig_T1<<1))) * ((BME280_S32_t)bme280_data.dig_T2)) >> 11;
-	var2  = (((((adc_T>>4) - ((BME280_S32_t)bme280_data.dig_T1)) * ((adc_T>>4) - ((BME280_S32_t)bme280_data.dig_T1))) >> 12) * ((BME280_S32_t)bme280_data.dig_T3)) >> 14;
-	bme280_t_fine = var1 + var2;
-	T  = (bme280_t_fine * 5 + 128) >> 8;
-
-	return T;
-}
-
-static esp_err_t i2c_bme280_startreadout (int read_delay_ms)
-{
-	if (read_delay_ms <= 0)		// 0 means default delay
-		read_delay_ms = BME280_SAMPLING_DELAY;
-
 	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL_HUM, bme280_ossh));
 	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL, (bme280_mode & 0xFC) | BME280_FORCED_MODE));
 
-	if (read_delay_ms > 1)		// 1 means no delay
-		delay_ms (read_delay_ms);
+	if (wait) {
+		uint8_t status;
+		int us;
+
+		for (us = 10*1000;;) {	// 10ms timeout
+			DbgR (i2c_read_bytes (BME280_I2C_ADDR, BME280_REGISTER_STATUS, &status, 1));
+			if (0 == status) break;
+			if ((us -= 100) <= 0) DbgR (ESP_FAIL);
+			delay_us (100);
+		}
+Log ("startreadout waited %dus", 10*1000-us);
+	}
 
 	return ESP_OK;
 }
@@ -186,42 +161,82 @@ static esp_err_t i2c_bme280_read (uint8_t *buf, size_t buflen)
 	return ESP_OK;
 }
 
-esp_err_t bme280_temp (float *temp)
+static esp_err_t i2c_bme280_soft_reset (void)
+{
+	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_SOFTRESET, BME280_SOFT_RESET_CODE));
+
+	return ESP_OK;
+}
+
+esp_err_t bme280_read (int32_t alt, float *pT, float *pQFE, float *pH, float *pQNH)
 {
 	esp_err_t ret;
-	uint8_t buf[8];	// registers are P[3], T[3], H[2]
-	int32_t adc_T;	//, adc_P, adc_H;
+	uint8_t buf[8];		// registers are P[3], T[3], H[2]
+	int32_t adc_T, adc_P, adc_H;
+	int32_t T, qfe, H, qnh;
 
 	if (!have_bme280) {
-		adc_T = 9999;
-		ret = ESP_FAIL;
+		Dbg (ESP_FAIL);
+		T = 8501;
 	} else {
-//		DbgR (i2c_bme280_startreadout (200));
 		memset (buf, 0, sizeof (buf));
 		Dbg (i2c_bme280_read (buf, sizeof(buf)));
-		if (ret != ESP_OK) {
-			adc_T = 9998;
-			ret = ESP_FAIL;
-		} else {
-//			adc_P = (int32_t)((buf[0] << 12) | (buf[1] << 4) | (buf[2] >> 4));
-			adc_T = (int32_t)((buf[3] << 12) | (buf[4] << 4) | (buf[5] >> 4));
-//			adc_H = (int32_t)((buf[6] <<  8) | buf[7]);
+		if (ret != ESP_OK)
+			T = 8502;
+		else
+			T = 0;	// for stupid compiler
+	}
 
-			adc_T = bme280_compensate_T(adc_T);
-//			qfe   = bme280_compensate_P(adc_P);
-//			adc_H = bme280_compensate_H(adc_H);
-//			qnh   = bme280_qfe2qnh(qfe, h);
-			ret = ESP_OK;
-		}
-		DbgR (i2c_bme280_startreadout (1));	// no delay
+	if (ESP_OK == ret) {
+		adc_P = (int32_t)((buf[0] << 12) | (buf[1] << 4) | (buf[2] >> 4));
+		adc_T = (int32_t)((buf[3] << 12) | (buf[4] << 4) | (buf[5] >> 4));
+		adc_H = (int32_t)((buf[6] <<  8) | buf[7]);
+
+		if (0x80000 == adc_T) {
+			Dbg (ESP_FAIL);
+			T = 8503;
+		} else
+			T = bme280_compensate_T(&bme280_data, adc_T);
+
+		if (0x8000 == adc_H) {
+			Dbg (ESP_FAIL);
+			H = 0;
+		} else
+			H = bme280_compensate_H(&bme280_data, adc_H);
+
+		if (0x80000 == adc_P) {
+			Dbg (ESP_FAIL);
+			qfe = 999*1000;
+		} else
+			qfe = bme280_compensate_P(&bme280_data, adc_P);
+
+		if (NULL != pQNH)
+			qnh = bme280_qfe2qnh(&bme280_data, qfe, alt);
+		else
+			qnh = 0;
+	} else {
+		adc_T = adc_P = adc_H = 0;
+		qfe = H = qnh = 0;
 	}
-	if (NULL != temp) {
-		*temp = adc_T/100.;
-		Log("t=%.2f %02x%02x%02x %02x%02x%02x %02x%02x", *temp,
-			buf[0], buf[1], buf[2],
-			buf[3], buf[4], buf[5],
-			buf[6], buf[7]);
-	}
+
+	/*Dbg*/ (i2c_bme280_startreadout (0));	// no delay
+
+	Log("t=%.2f qfe=%.3f h=%.3f qnh=%.3f %x %x %x %02x%02x%02x %02x%02x%02x %02x%02x",
+		T/100., qfe / 1000., H / 1000., qnh / 1000.,
+		adc_P, adc_T, adc_H,
+		buf[0], buf[1], buf[2],
+		buf[3], buf[4], buf[5],
+		buf[6], buf[7]);
+
+
+	if (NULL != pT)
+		*pT = T / 100.;
+	if (NULL != pQFE)
+		*pQFE = qfe / 1000.;
+	if (NULL != pH)
+		*pH = H / 1000.;
+	if (NULL != pQNH)
+		*pQNH = qnh / 1000.;
 
 	return ret;
 }
@@ -304,6 +319,11 @@ esp_err_t bme280_init (uint8_t sda, uint8_t scl, int full)
 
     DbgR (i2c_master_init(sda, scl));
 
+    if (full) {
+	DbgR (i2c_bme280_soft_reset());
+	delay_ms (10);
+    }
+
     DbgR (i2c_bme280_setup (
 	1,			// oversampling x1 (read once)
 	1,			// oversampling x1 (read once)
@@ -311,9 +331,13 @@ esp_err_t bme280_init (uint8_t sda, uint8_t scl, int full)
 	BME280_SLEEP_MODE,	// power mode
 	0,			// filter off
 	0,			// inactive_duration (not used)
-	1+0*full));		// init the chip too (we do on cold start)
+	full));			// init the chip too (we do on cold start)
 
     have_bme280 = 1;
+
+    if (full)
+	DbgR (i2c_bme280_startreadout(1));
+
     return ESP_OK;
 }
 
