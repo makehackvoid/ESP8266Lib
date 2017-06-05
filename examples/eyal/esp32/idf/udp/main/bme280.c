@@ -177,12 +177,12 @@ esp_err_t bme280_read (int32_t alt, float *pT, float *pQFE, float *pH, float *pQ
 
 	if (!have_bme280) {
 		Dbg (ESP_FAIL);
-		T = 8501;
+		T = BAD_TEMP*100+1;
 	} else {
 		memset (buf, 0, sizeof (buf));
 		Dbg (i2c_bme280_read (buf, sizeof(buf)));
 		if (ret != ESP_OK)
-			T = 8502;
+			T = BAD_TEMP*100+2;
 		else
 			T = 0;	// for stupid compiler
 	}
@@ -194,19 +194,19 @@ esp_err_t bme280_read (int32_t alt, float *pT, float *pQFE, float *pH, float *pQ
 
 		if (0x80000 == adc_T) {
 			Dbg (ESP_FAIL);
-			T = 8503;
+			T = BAD_TEMP*100+3;
 		} else
 			T = bme280_compensate_T(&bme280_data, adc_T);
 
 		if (0x8000 == adc_H) {
 			Dbg (ESP_FAIL);
-			H = 0;
+			H = BME280_BAD_HUMI*0;
 		} else
 			H = bme280_compensate_H(&bme280_data, adc_H);
 
 		if (0x80000 == adc_P) {
 			Dbg (ESP_FAIL);
-			qfe = 999*1000;
+			qfe = BME280_BAD_QFE*1000;
 		} else
 			qfe = bme280_compensate_P(&bme280_data, adc_P);
 
@@ -307,6 +307,7 @@ static esp_err_t i2c_bme280_setup(
 	}
 #undef r16uLE_buf
 #undef r16sLE_buf
+
 	if (full_init)
 		DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL, bme280_mode));
 	

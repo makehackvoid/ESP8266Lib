@@ -77,13 +77,19 @@ static esp_err_t ds18b20_read_scratchpad(uint8_t *scratchpad)
 	return ESP_OK;
 }
 
-esp_err_t ds18b20_get_temp(float *temp)
+esp_err_t ds18b20_read_temp(float *temp)
 {
 	uint8_t scratchpad[9];
+	int16_t t;
 
-	*temp = 0.0;
+	*temp = BAD_TEMP * 100;
 	DbgR (ds18b20_read_scratchpad(scratchpad));
-	*temp = ((scratchpad[1]<<8) | scratchpad[0]) / 16.0;
+	t = ((int16_t)scratchpad[1]<<8) | scratchpad[0];
+	if (85*16 == t || 0x07ff == t) {	// common bad readings
+		*temp = BAD_TEMP * 100 + 1;
+		DbgR (ESP_FAIL);
+	}
+	*temp = t / 16.0;
 
 	return ESP_OK;
 }

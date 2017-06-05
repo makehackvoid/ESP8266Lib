@@ -11,6 +11,8 @@
 #include <esp_system.h>
 #include <esp_err.h>
 
+#define BAD_TEMP	85
+
 /* udp.c */
 void toggle(int ntimes);
 void get_time (struct timeval *now);

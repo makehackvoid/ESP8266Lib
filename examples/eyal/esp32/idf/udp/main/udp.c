@@ -172,7 +172,7 @@ static esp_err_t ds18b20_temp (float *temp)
 
 		DbgR (ds18b20_convert (1));
 	}
-	DbgR (ds18b20_get_temp (temp));
+	DbgR (ds18b20_read_temp (temp));
 	if (reset_reason == DEEPSLEEP_RESET)	// deep sleep wakeup
 		DbgR (ds18b20_convert (0));
 
@@ -228,7 +228,7 @@ static void format_msg (char *buf, int buflen)
 	char *msg = buf;
 	int mlen = buflen;
 	int len;
-	float T, temps[2];
+	float temp, temps[2];
 	int ntemps;
 	int i;
 	float bat, vdd;
@@ -244,32 +244,40 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 	ntemps = 0;
 #if READ_DS18B20
-	Dbg (ds18b20_temp (&T));
-	if (ret != ESP_OK || T >= 85) {
-		Dbg (ds18b20_temp (&T));	// one retry
-		if (ret != ESP_OK || T >= 85) {
+	Dbg (ds18b20_temp (&temp));
+	if (ret != ESP_OK || temp >= BAD_TEMP) {
+		Dbg (ds18b20_temp (&temp));	// one retry
+		if (ret != ESP_OK || temp >= BAD_TEMP) {
 			toggle_error();		// tell DSO
 			++failReadHard;
-			T = 85.0;
+			temp = BAD_TEMP;
 		} else
 			++failRead;
 	}
-	temps[ntemps++] = T;
+	temps[ntemps++] = temp;
 #endif // READ_DS18B20
 
 #if READ_BME280
-	float qfe, h;
-	int fail = 0;
+    {
+	float qfe, h, qnh;
+	int fail;
 
-	Dbg (bme280_read (660, &T, &qfe, &h, NULL));
-	if (ret != ESP_OK || T >= 85) {
+	Dbg (bme280_read (622, &temp, &qfe, &h, &qnh));
+	if (ret != ESP_OK || temp >= BAD_TEMP) {
 		toggle_error();		// tell DSO
 		++failRead;
 	}
-	temps[ntemps++] = T;
+
+	fail = 0;
+	if (       BAD_TEMP <= temp) fail |= 0x01;
+	if (BME280_BAD_QFE  == qfe)  fail |= 0x02;
+	if (BME280_BAD_HUMI == h)    fail |= 0x04;
+
 	snprintf (weather, sizeof(weather),
-		" w=T%.2f,P%.3f,H%.3f,f%x"	,
-		T, qfe, h, fail);
+		" w=T%.2f,P%.3f,H%.3f,f%x",
+		temp, qnh, h, fail);
+    }
+	temps[ntemps++] = temp;
 #else
 	weather[0] = '\0';
 #endif // READ_BME280
