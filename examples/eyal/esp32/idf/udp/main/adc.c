@@ -14,20 +14,14 @@
 
 #define ADC_WIDTH       ADC_WIDTH_12Bit
 
-//#define ADC_ATTEN	ADC_ATTEN_0db
-//#define ADC_ATTEN_RATIO	(4095.)
-
 #define ADC_ATTEN	ADC_ATTEN_6db
 #define ADC_ATTEN_RATIO	(4095. / 2)
 
-//#define ADC_ATTEN	ADC_ATTEN_11db
-//#define ADC_ATTEN_RATIO	(4095. / 3.548134)
+#define VDD_CHANNEL	ADC1_CHANNEL_4		// gpio 32 
+#define VDD_DIVIDER	3.065	// measured on dividing resistors
 
-#define VDD_CHANNEL	ADC1_CHANNEL_4
-#define VDD_DIVIDER	3.065	// measured
-
-#define BAT_CHANNEL	ADC1_CHANNEL_5
-#define BAT_DIVIDER	2.99	// measured
+#define BAT_CHANNEL	ADC1_CHANNEL_5		// gpio 33
+#define BAT_DIVIDER	2.99	// measured on dividing resistors
 
 esp_err_t read_adc (float *bat, float *vdd)
 {

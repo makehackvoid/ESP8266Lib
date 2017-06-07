@@ -143,7 +143,7 @@ toggle(1);	// DEBUG
 	ets_delay_us(70);	// measured: low in 30us, high in 140us
 	if (gpio_get_level(ow_pin)) return ESP_FAIL;
 	ets_delay_us(410);
-	if (!gpio_get_level(ow_pin)) return ESP_FAIL;
+//	if (!gpio_get_level(ow_pin)) return ESP_FAIL;	// TESTING
 
 	return ESP_OK;
 }

@@ -20,36 +20,54 @@
 #include <soc/efuse_reg.h>	// needed by getChip*()
 #include <driver/adc.h>
 
-// best to provide the following in CFLAGS
+// best to provide CFLAGS: AP_SSID AP_PASS MY_IP MY_NAME
 #ifndef AP_SSID
 #error undefined AP_SSID
 #endif
+
 #ifndef AP_PASS
 #error undefined AP_SSID
 #endif
 
-#define SVR_IP		"192.168.2.7"
-#define SVR_PORT	21883
-
-#ifndef MY_IP
-#error undefined MY_IP
+#ifndef SVR_IP
+#define SVR_IP		"192.168.2.7"	// server IP
 #endif
 
-#define MY_NM		"255.255.255.0"
-#define MY_GW		SVR_IP
+#ifndef SVR_PORT
+#define SVR_PORT	21883		// server port
+#endif
 
-#define SLEEP_S		5	// seconds
-#define GRACE_MS	50	// multiple of 10ms
+#ifdef MY_IP				// client IP
+#define USE_DHCPC	0		// use static IP
 
-#define USE_DHCPC	0	// 0=no, use static IP
+#ifndef MY_NM
+#define MY_NM		"255.255.255.0"	// netmask
+#endif	// ifndef MY_NM
+
+#ifndef MY_GW
+#define MY_GW		SVR_IP		// gateway
+#endif // ifndef MY_GW
+
+#else // ifdef MY_IP
+#define USE_DHCPC	1		// use dhcp
+#endif
+
+#ifndef MY_NAME
+#define MY_NAME		"test"
+#endif
+
+#define SLEEP_S		 5	// seconds
+#define GRACE_MS	50	// time to wait before deep sleep to drain wifi tx
+
 #define DISCONNECT	0	// 0=no disconnect before deep sleep
 
-#define RUN_AS_TASK	1
+#define RUN_AS_TASK	1	// high priority task may incur less timing difficulties?
 
-#define READ_BME280	1	// enable when it starts working...
-#define READ_DS18B20	1
-#define READ_ADC	1
-#define PRINT_MSG	0	// print message when logging is off
+#define READ_BME280	0	// enable if you have one connected
+#define READ_DS18B20	0	// enable if you have one connected
+#define READ_ADC	0	// enable if you have something connected
+				// see adc.c for pins used, I use gpio 32 & 33
+#define PRINT_MSG	0	// print message when logging is off?
 
 #define I2C_SCL		22	// i2c
 #define I2C_SDA		21	// i2c
@@ -57,7 +75,7 @@
 #define OW_PIN		18	// ow
 #define ERROR_PIN	17	// indicate a failure (debug)
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
-#define DBG_PIN		15	// IN  pull low to silence Log()
+#define DBG_PIN		21 // 15	// IN  pull low to silence Log()
 
 #if READ_BME280
 #include "bme280.h"
@@ -65,7 +83,7 @@
 
 #if READ_DS18B20
 #include "ds18b20.h"
-  #define ROM_ID	NULL
+  #define ROM_ID	NULL	// when only one ow device connected, fastest
 //#define ROM_ID	(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"
 #endif
 
@@ -106,6 +124,8 @@ static uint8_t getChipRevision (void)
 	return (REG_READ (EFUSE_BLK0_RDATA3_REG)>>EFUSE_RD_CHIP_VER_RESERVE_S)&&EFUSE_RD_CHIP_VER_RESERVE_V;
 }
 
+#if 000
+// does not work
 static uint64_t getChipMAC (void)
 {
 	uint64_t mac = 
@@ -114,6 +134,7 @@ static uint64_t getChipMAC (void)
 ((REG_READ (EFUSE_BLK0_RDATA1_REG)>>EFUSE_RD_WIFI_MAC_CRC_LOW_S) &&EFUSE_RD_WIFI_MAC_CRC_LOW_V);
 	return mac;
 }
+#endif
 
 static void toggle_setup (void)
 {
@@ -228,7 +249,7 @@ static void format_msg (char *buf, int buflen)
 	char *msg = buf;
 	int mlen = buflen;
 	int len;
-	float temp, temps[2];
+	float temps[2];
 	int ntemps;
 	int i;
 	float bat, vdd;
@@ -244,6 +265,9 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 	ntemps = 0;
 #if READ_DS18B20
+{
+	float temp;
+
 	Dbg (ds18b20_temp (&temp));
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
 		Dbg (ds18b20_temp (&temp));	// one retry
@@ -255,10 +279,12 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 			++failRead;
 	}
 	temps[ntemps++] = temp;
+}
 #endif // READ_DS18B20
 
 #if READ_BME280
-    {
+{
+	float temp;
 	float qfe, h, qnh;
 	int fail;
 
@@ -276,12 +302,14 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	snprintf (weather, sizeof(weather),
 		" w=T%.2f,P%.3f,H%.3f,f%x",
 		temp, qnh, h, fail);
-    }
 	temps[ntemps++] = temp;
+}
 #else
 	weather[0] = '\0';
 #endif // READ_BME280
 
+	if (0 == ntemps)
+		temps[ntemps++] = 0;
 #if READ_ADC
 	Dbg (read_adc (&bat, &vdd));
 #else
@@ -292,8 +320,8 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	get_time (&now);
 
 	len = snprintf (msg, mlen,
-		"show esp-32a %d",
-		runCount);
+		"show %s %d",
+		MY_NAME, runCount);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;
@@ -464,11 +492,11 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 #endif
 }
 
-static void set_ip (void)
+static esp_err_t set_ip (void)
 {
 #if !USE_DHCPC
 Log ("tcpip_adapter_dhcpc_stop");
-	tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);
+	DbgR (tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
 
 Log ("tcpip_adapter_set_ip_info");
 	tcpip_adapter_ip_info_t ip_info_new;
@@ -476,12 +504,15 @@ Log ("tcpip_adapter_set_ip_info");
 	ip4addr_aton(MY_IP, &ip_info_new.ip);
 	ip4addr_aton(MY_NM, &ip_info_new.netmask);
 	ip4addr_aton(MY_GW, &ip_info_new.gw);
-	tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info_new);
+	DbgR (tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info_new));
 #endif	/* if !USE_DHCPC */
+
+	return ESP_OK;
 }
 
 static esp_err_t event_handler (void *ctx, system_event_t *event)
 {
+Log("event_handler: SYSTEM_EVENT %d", event->event_id);
 	switch(event->event_id) {
 	case SYSTEM_EVENT_STA_START:
 		toggle(1);
@@ -492,7 +523,7 @@ Log ("SYSTEM_EVENT_STA_START");
 		time_wifi_us = _get_time_since_boot() - time_wifi_us;
 {
 		wifi_ap_record_t wifidata;
-		esp_wifi_sta_get_ap_info(&wifidata);
+		DbgR (esp_wifi_sta_get_ap_info(&wifidata));
 		rssi = wifidata.rssi;
 Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d", rssi);
 }
@@ -513,7 +544,7 @@ Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
 		do_grace ();
 
 Log ("esp_wifi_disconnect");
-		esp_wifi_disconnect();
+		DbgR (esp_wifi_disconnect());
 #else
 		finish ();
 #endif
@@ -525,38 +556,46 @@ Log ("SYSTEM_EVENT_STA_DISCONNECTED");
 			finish ();
 		else {
 Log ("esp_wifi_connect");
-			esp_wifi_connect();	// try once again
+			DbgR (esp_wifi_connect());	// try once again
 		}
 		break;
 	default:
 Log ("ignoring SYSTEM_EVENT %d", event->event_id);
 		break;
 	}
+
 	return ESP_OK;
 }
 
-static void udp(void *param)
+static esp_err_t app(void)
 {
+	esp_err_t ret;
+
+#if READ_BME280
+	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
+	// failure logged but ignored
+#endif // READ_BME280
+
 #if 000		// no effect
 Log ("esp_phy_load_cal_and_init");
-	esp_phy_load_cal_and_init();	// no effect
+	DbgR (esp_phy_load_cal_and_init());	// no effect
 #endif
 	
 Log ("tcpip_adapter_init");
 	tcpip_adapter_init();
 
-	set_ip();
+	DbgR (set_ip());
 
 Log ("esp_event_loop_init");
-	esp_event_loop_init(event_handler, NULL);
+	DbgR (esp_event_loop_init(event_handler, NULL));
 
 Log ("esp_wifi_init");
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-	esp_wifi_init(&cfg);
+	DbgR (esp_wifi_init(&cfg));
 
 	if (reset_reason != DEEPSLEEP_RESET) {	// this should be saved in flash
 Log ("esp_wifi_set_mode");
-		esp_wifi_set_mode(WIFI_MODE_STA);
+		DbgR (esp_wifi_set_mode(WIFI_MODE_STA));
 
 		wifi_config_t wifi_config = {
 			.sta = {
@@ -566,15 +605,26 @@ Log ("esp_wifi_set_mode");
 			},
 		};
 Log ("esp_wifi_set_config");
-		esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
+		DbgR (esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 	}
 
 Log ("esp_wifi_start");
 	time_wifi_us = _get_time_since_boot();
-	esp_wifi_start();
+	DbgR (esp_wifi_start());
 
 Log ("esp_wifi_connect");
-	esp_wifi_connect();
+	DbgR (esp_wifi_connect());
+
+	return ESP_OK;
+}
+
+static void main_task(void *param)
+{
+	(void)app();
+
+#if RUN_AS_TASK
+	while (1) vTaskDelay(5000/portTICK_PERIOD_MS);	// in 5s we will sleep anyway
+#endif
 }
 
 void app_main ()
@@ -585,37 +635,39 @@ void app_main ()
 	gpio_pad_select_gpio(TOGGLE_PIN);
 	gpio_set_direction(TOGGLE_PIN, GPIO_MODE_INPUT);
 	gpio_pullup_en(TOGGLE_PIN);
-	do_toggle = gpio_get_level(TOGGLE_PIN);
-	if (do_toggle)
-		toggle_setup();
 
 	gpio_pad_select_gpio(DBG_PIN);
 	gpio_set_direction(DBG_PIN, GPIO_MODE_INPUT);
 	gpio_pullup_en(DBG_PIN);
+
+// leave a gap between setting the pins up and reading them.
+
+	do_toggle = gpio_get_level(TOGGLE_PIN);
+	if (do_toggle)
+		toggle_setup();
+
 	do_log = gpio_get_level(DBG_PIN);
 // turn off internal messages below ERROR level
 	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
+printf("do_toggle=%d do_log=%d\n", do_toggle, do_log); fflush(stdout);
+
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
 
-	Log ("Chip revision %d MAC %012llx", getChipRevision(), getChipMAC());
+//	Log ("Chip revision %d MAC %012llx", getChipRevision(), getChipMAC());
+	Log ("Chip revision %d", getChipRevision());
 
 	wakeup_cause = rtc_get_wakeup_cause();
 	reset_reason = rtc_get_reset_reason(0);
 
 // do we need a RTC_DATA_ATTR magic?
 
-#if READ_BME280
-	esp_err_t ret;
-	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
-#endif // READ_BME280
-
 #if RUN_AS_TASK
-	udp(NULL);
-#else
-	xTaskCreate(udp, "udp", 40960, NULL, 20, NULL);
+	xTaskCreate(main_task, "udp", 10240, NULL, 20, NULL);
 	while (1) vTaskDelay(5000/portTICK_PERIOD_MS);	// in 5s we will sleep anyway
+#else
+	main_task(NULL);
 #endif
 }
 

@@ -16,11 +16,10 @@
 /* udp.c */
 void toggle(int ntimes);
 void get_time (struct timeval *now);
-void delay (int ms);
 
 int do_log;
 
-#define LOG_FLUSH	0	// 0=no flush after each Log message
+#define LOG_FLUSH	1	// 0=no flush after each Log message
 
 #define Dbg(f) \
 do { \
@@ -47,6 +46,9 @@ if (do_log) do { \
 	printf ("%3lu.%06lu " fmt "\n", now.tv_sec, now.tv_usec, ##__VA_ARGS__); \
 	if (LOG_FLUSH) fflush(stdout); \
 } while (0)
+
+#define Mark() \
+	Log ("### %s:%d: LOG", __FILE__, __LINE__)
 
 #define delay_us(us)	ets_delay_us (us)
 #define delay_ms(ms) \
