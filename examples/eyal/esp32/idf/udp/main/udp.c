@@ -64,7 +64,7 @@
 #define RUN_AS_TASK	1	// high priority task may incur less timing difficulties?
 
 #define READ_BME280	0	// enable if you have one connected
-#define READ_DS18B20	0	// enable if you have one connected
+#define READ_DS18B20	1	// enable if you have one connected
 #define READ_ADC	0	// enable if you have something connected
 				// see adc.c for pins used, I use gpio 32 & 33
 #define PRINT_MSG	0	// print message when logging is off?
@@ -72,19 +72,22 @@
 #define I2C_SCL		22	// i2c
 #define I2C_SDA		21	// i2c
 #define OUT_PIN		19	// OUT toggled to mark program steps
-#define OW_PIN		18	// ow
-#define ERROR_PIN	17	// indicate a failure (debug)
+#define OW_PIN		18	// IO  ow
+#define ERROR_PIN	17	// OUT indicate a failure (debug). -1 to disable
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
-#define DBG_PIN		21 // 15	// IN  pull low to silence Log()
+#define DBG_PIN		15	// IN  pull low to silence Log()
 
 #if READ_BME280
 #include "bme280.h"
+RTC_DATA_ATTR static int bme280_failures = 0;
 #endif
 
 #if READ_DS18B20
 #include "ds18b20.h"
   #define ROM_ID	NULL	// when only one ow device connected, fastest
-//#define ROM_ID	(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"
+//#define ROM_ID	(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"	// esp-32a
+//#define ROM_ID	(uint8_t *)"\x28\xa9\x7f\x78\x06\x00\x00\xb3"	// esp-32c
+RTC_DATA_ATTR static int ds18b20_failures = 0;
 #endif
 
 #if READ_ADC
@@ -146,16 +149,26 @@ static void toggle_setup (void)
 // pin is LOW  during sleep
 // pin is HIGH at start
 // toggle is 100us: 50us LOW, 50us HIGH (not on final time)
-void toggle(int ntimes) {
+static void toggle_out (int ntimes, int us)
+{
 	if (do_toggle) while (ntimes-- > 0) {
 		gpio_set_level(OUT_PIN, 0);
-		delay_us (50);
+		delay_us (us);
 		gpio_set_level(OUT_PIN, 1);
 		if (ntimes)
-			delay_us (50);
+			delay_us (us);
 	}
 }
 
+void toggle (int ntimes) {
+	toggle_out (ntimes, 50);
+}
+
+void toggle_short (int ntimes) {
+	toggle_out (ntimes, 2);
+}
+
+#if ERROR_PIN >= 0
 static void toggle_error (void)
 {
 	gpio_pad_select_gpio(ERROR_PIN);
@@ -164,6 +177,9 @@ static void toggle_error (void)
 	delay_us (50);
 	gpio_set_level(ERROR_PIN, 0);
 }
+#else
+#define toggle_error()
+#endif
 
 void get_time (struct timeval *now)
 {
@@ -180,6 +196,8 @@ void get_time (struct timeval *now)
 #if READ_DS18B20
 static esp_err_t ds18b20_temp (float *temp)
 {
+	esp_err_t ret;
+	esp_err_t rval = ESP_OK;	// first failure
 	uint8_t id[8];
 
 	*temp = 0.0;
@@ -193,13 +211,17 @@ static esp_err_t ds18b20_temp (float *temp)
 
 		DbgR (ds18b20_convert (1));
 	}
-	DbgR (ds18b20_read_temp (temp));
-	if (reset_reason == DEEPSLEEP_RESET)	// deep sleep wakeup
-		DbgR (ds18b20_convert (0));
+	Dbg (ds18b20_read_temp (temp));
+	if (ESP_OK == rval) rval = ret;
+	if (reset_reason == DEEPSLEEP_RESET) {	// deep sleep wakeup
+		Dbg (ds18b20_convert (0));
+		if (ESP_OK == rval) rval = ret;
+	}
 
-	DbgR (ds18b20_depower ());
+	Dbg (ds18b20_depower ());
+	if (ESP_OK == rval) rval = ret;
 
-	return ESP_OK;
+	return rval;
 }
 #endif // READ_DS18B20
 
@@ -265,11 +287,15 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 	ntemps = 0;
 #if READ_DS18B20
+	float ds18b20_failure_reason = 0;
 {
 	float temp;
 
 	Dbg (ds18b20_temp (&temp));
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
+		toggle_error();		// tell DSO
+		++ds18b20_failures;
+		ds18b20_failure_reason = temp;
 		Dbg (ds18b20_temp (&temp));	// one retry
 		if (ret != ESP_OK || temp >= BAD_TEMP) {
 			toggle_error();		// tell DSO
@@ -292,6 +318,7 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
 		toggle_error();		// tell DSO
 		++failRead;
+		++bme280_failures;
 	}
 
 	fail = 0;
@@ -382,19 +409,46 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 #endif
 
 	len = snprintf (msg, mlen,
-		" stats=fs%d,fh%d,fr%d,fR%d,c%03x,r%d",
-		failSoft, failHard, failRead, failReadHard, wakeup_cause, reset_reason);
+		" stats=fs%d,fh%d,fr%d,fR%d",
+		failSoft, failHard, failRead, failReadHard);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+#if READ_DS18B20
+	len = snprintf (msg, mlen,
+		",Dc%d,Dr%.4f",
+		ds18b20_failures, ds18b20_failure_reason);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+#endif
+#if READ_BME280
+	len = snprintf (msg, mlen,
+		",Bc%d",
+		bme280_failures);
+	if (len > 0) {
+		msg += len;
+		mlen -= len;
+	}
+#endif
+	len = snprintf (msg, mlen,
+		",c%03x,r%d",
+		wakeup_cause, reset_reason);
 	if (len > 0) {
 		msg += len;
 		mlen -= len;
 	}
 
-	len = snprintf (msg, mlen,
-		"%s",
-		weather);
-	if (len > 0) {
-		msg += len;
-		mlen -= len;
+	if ('\0' != weather[0]) {
+		len = snprintf (msg, mlen,
+			"%s",
+			weather);
+		if (len > 0) {
+			msg += len;
+			mlen -= len;
+		}
 	}
 
 	len = snprintf (msg, mlen,
@@ -415,7 +469,7 @@ Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
 
 	for (i = 0; i < ntemps; ++i) {
 		len = snprintf (msg, mlen,
-			"%c%.2f",
+			"%c%.4f",
 			(i ? ',' : ' '), temps[i]);
 		if (len > 0) {
 			msg += len;
@@ -578,7 +632,7 @@ static esp_err_t app(void)
 
 #if 000		// no effect
 Log ("esp_phy_load_cal_and_init");
-	DbgR (esp_phy_load_cal_and_init());	// no effect
+	esp_phy_load_cal_and_init();	// no effect
 #endif
 	
 Log ("tcpip_adapter_init");
@@ -650,7 +704,7 @@ void app_main ()
 // turn off internal messages below ERROR level
 	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
-printf("do_toggle=%d do_log=%d\n", do_toggle, do_log); fflush(stdout);
+//printf("do_toggle=%d do_log=%d\n", do_toggle, do_log); fflush(stdout);
 
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
@@ -697,12 +751,6 @@ slow:
 fast:
 	RTC8M_CLK	8MHz
 	XTL_CLK/DIV
-
-xTaskCreatePinnedToCore(&bleAdvtTask, "bleAdvtTask", 2048, NULL, 5, NULL, 0);
-vTaskDelete(NULL);
-
-xTaskCreate(eth_task, "eth_task", 2048, NULL, (tskIDLE_PRIORITY + 2), NULL);
-xTaskCreate(&blink_task, "blink_task", 512, NULL, 5, NULL);
 
 TaskHandle_t tx_rx_task;
 xTaskCreate(&send_data, "send_data", 4096, NULL, 4, &tx_rx_task);

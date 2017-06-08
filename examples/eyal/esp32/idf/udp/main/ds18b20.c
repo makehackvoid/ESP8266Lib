@@ -27,6 +27,9 @@
 #include "ds18b20.h"
 #include "onewire.h"
 
+#define DS18B20_DEVICE_ID		0x28
+#define DS18S20_DEVICE_ID		0x10
+
 #define DS18B20_SEARCH_ROM		0xF0
 #define DS18B20_READ_ROM		0x33
 #define DS18B20_MATCH_ROM		0x55
@@ -67,12 +70,18 @@ static esp_err_t ds18b20_send_command(uint8_t cmd)
 
 static esp_err_t ds18b20_read_scratchpad(uint8_t *scratchpad)
 {
+	uint8_t crc;
+
 	if(!inited) DbgR (ESP_FAIL);
 
 	DbgR (ds18b20_send_command (DS18B20_READ_SCRATCHPAD));
 	DbgR (ow_read_bytes (9, scratchpad));
 
-	if (scratchpad[8] != onewire_crc8(scratchpad, 8)) DbgR (ESP_FAIL);
+	if (scratchpad[8] != (crc = onewire_crc8(scratchpad, 8))) {
+		Log ("### %s:%d: bad scratchpad crc %02x, read %02x",
+			__FILE__, __LINE__, crc, scratchpad[8]);
+		return ESP_FAIL;
+	}
 
 	return ESP_OK;
 }
@@ -82,12 +91,13 @@ esp_err_t ds18b20_read_temp(float *temp)
 	uint8_t scratchpad[9];
 	int16_t t;
 
-	*temp = BAD_TEMP * 100;
+	*temp = BAD_TEMP;
 	DbgR (ds18b20_read_scratchpad(scratchpad));
 	t = ((int16_t)scratchpad[1]<<8) | scratchpad[0];
 	if (85*16 == t || 0x07ff == t) {	// common bad readings
-		*temp = BAD_TEMP * 100 + 1;
-		DbgR (ESP_FAIL);
+		*temp = BAD_TEMP + .01;
+		Log ("### %s:%d: bad temp %.4f 0x%04x", __FILE__, __LINE__, t/16., t);
+		return ESP_FAIL;
 	}
 	*temp = t / 16.0;
 
@@ -123,9 +133,15 @@ esp_err_t ds18b20_depower (void)
 
 esp_err_t ds18b20_read_id (uint8_t *id)
 {
+	uint8_t crc;
+
 	DbgR (ds18b20_send_command (DS18B20_READ_ROM));
 	DbgR (ow_read_bytes (8, id));
-	if (id[7] != onewire_crc8(id, 7)) DbgR (ESP_FAIL);
+	if (id[7] != (crc = onewire_crc8(id, 7))) {
+		Log ("### %s:%d: bad id crc %02x, read %02x",
+			__FILE__, __LINE__, crc, id[7]);
+		return ESP_FAIL;
+	}
 
 	return ESP_OK;
 }
@@ -135,8 +151,16 @@ esp_err_t ds18b20_init (uint8_t pin, uint8_t *id)
 	DbgR (ow_init (pin));
 
 	if (NULL != id) {
-		if (id[7] != onewire_crc8(id, 7)) DbgR (ESP_FAIL);
-		if (id[0] != 0x28) DbgR (ESP_FAIL);	// not a ds18b20
+		if (id[7] != onewire_crc8(id, 7)) {
+			Log ("### %s:%d: bad id, crc check failed",
+				__FILE__, __LINE__);
+			return ESP_FAIL;
+		}
+		if (id[0] != DS18B20_DEVICE_ID) {	// not a ds18b20
+			Log ("### %s:%d: device type %02x not a ds18b20 (%02x)",
+				__FILE__, __LINE__, id[0], DS18B20_DEVICE_ID);
+			return ESP_FAIL;
+		}
 		memcpy (rom_id, id, 8);
 	}
 
@@ -144,11 +168,4 @@ esp_err_t ds18b20_init (uint8_t pin, uint8_t *id)
 
 	return ESP_OK;
 }
-
-#if 000
-
-first byte of id
-	0x28 DS18B20, 4 fractional bits
-	0x10 DS18S20, 1 fractional bits
-#endif
 

@@ -36,6 +36,16 @@
 #define ONEWIRE_CRC8_TABLE	1
 #define ONEWIRE_CRC16		1
 
+#if ONEWIRE_INTERNAL_PULLUP
+#define DS18B20_GO_INPUT() \
+do { \
+	gpio_set_pull_mode(ow_pin, GPIO_PULLUP_ONLY); \
+	gpio_set_direction(ow_pin, GPIO_MODE_INPUT); \
+} while (0)
+#else
+	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
+#endif
+
 #define OW_NO_PIN		0xFF
 static uint8_t ow_pin = OW_NO_PIN;
 
@@ -43,7 +53,7 @@ static uint8_t ow_pin = OW_NO_PIN;
 static esp_err_t ow_wait_for_high (int us)
 {
 	for (; !gpio_get_level (ow_pin); us -= 5) {
-		if (us < 0) return ESP_FAIL;
+		if (us <= 0) return ESP_FAIL;
 		ets_delay_us(5);
 	}
 
@@ -58,10 +68,10 @@ esp_err_t ow_write_bits (int nbits, uint8_t *data)
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
 	if (nbits < 0) DbgR (ESP_FAIL);
 
-toggle(2);	// DEBUG
+toggle_short (2);
 
-#if ONEWIRE_POWERED
 	DbgR (ow_wait_for_high (60));	// 60us
+#if ONEWIRE_POWERED
 	gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
 	d = *data++;
@@ -71,24 +81,35 @@ toggle(2);	// DEBUG
 			d = *data++;
 		}
 #if !ONEWIRE_POWERED
-		DbgR (ow_wait_for_high (60));	// 60us
+//		DbgR (ow_wait_for_high (60));	// 60us
+if (0) {
+	esp_err_t ret;
+	Dbg (ow_wait_for_high (5));	// recovery
+	if (ESP_OK != ret) {
+		Log ("### %s:%d: ret=%d nbits=%d i=%d",
+			__FILE__, __LINE__, ret, nbits, i);
+		return ret;
+	}
+} else
+	ets_delay_us (5);	// recovery
+toggle_short (1);
 		gpio_set_direction (ow_pin, GPIO_MODE_OUTPUT);
 #endif
 		gpio_set_level (ow_pin, 0);
-		ets_delay_us (5);
+		ets_delay_us (3);
 
 		if (d & 1) gpio_set_level (ow_pin, 1);
-		ets_delay_us (60-5);
+		ets_delay_us (60-3);
 
 #if ONEWIRE_POWERED
 		gpio_set_level (ow_pin, 1);
 #else
-		gpio_set_direction (ow_pin, GPIO_MODE_INPUT);
+		DS18B20_GO_INPUT ();
 #endif
-		ets_delay_us (2);	// recovery
+//		ets_delay_us (2);	// recovery
 	}
 #if ONEWIRE_POWERED
-	gpio_set_direction (ow_pin, GPIO_MODE_INPUT);
+	DS18B20_GO_INPUT ();
 #endif
 	DbgR (ow_wait_for_high (60));	// 60us
 
@@ -103,28 +124,40 @@ esp_err_t ow_read_bits (int nbits, uint8_t *data)
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
 	if (nbits < 0) DbgR (ESP_FAIL);
 
-toggle(3);	// DEBUG
+toggle_short(3);
+	DbgR (ow_wait_for_high (60));		// 60us
 	for (i = 0, b = 0; i < nbits; ++i, ++b) {
 		if (8 == b) {
 			b = 0;
 			*data++ = d;
 			d = 0;
 		}
-		DbgR (ow_wait_for_high (60));	// 60us
+//		DbgR (ow_wait_for_high (5));	// recovery
+if (0) {
+	esp_err_t ret;
+	Dbg (ow_wait_for_high (5));	// recovery
+	if (ESP_OK != ret) {
+		Log ("### %s:%d: ret=%d nbits=%d i=%d",
+			__FILE__, __LINE__, ret, nbits, i);
+		return ret;
+	}
+} else
+	ets_delay_us (5);	// recovery
+toggle_short(1);
 		gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 		gpio_set_level(ow_pin, 0);
-		ets_delay_us(5);
+		ets_delay_us(3);
 
-		gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
-		ets_delay_us(8);	// measured: data ready in 4us, gone in 28us
+		DS18B20_GO_INPUT ();
+		ets_delay_us(7);		// measured: data ready in 4us, gone in 28us
 		d |= gpio_get_level (ow_pin) << b;
 
-		ets_delay_us ((60-5-8)+1);	// for 60us read time slot + 1us recovery
+		ets_delay_us (60-3-7);		// 60us read time slot
 	}
-	DbgR (ow_wait_for_high (60));	// 60us
-
-	if (b > 0)	// last partial byte
+	if (b > 0)				// last byte or part of
 		*data = d;
+
+	DbgR (ow_wait_for_high (60));		// 60us
 
 	return ESP_OK;
 }
@@ -133,16 +166,19 @@ esp_err_t ow_reset(void)
 {
 	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
 
-toggle(1);	// DEBUG
+toggle_short(4);
 	DbgR (ow_wait_for_high (480));		// 480us
+toggle_short(1);
 	gpio_set_direction(ow_pin, GPIO_MODE_OUTPUT);
 	gpio_set_level(ow_pin, 0);
 	ets_delay_us(480);
 
-	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
+	DS18B20_GO_INPUT ();
 	ets_delay_us(70);	// measured: low in 30us, high in 140us
+toggle_short(1);
 	if (gpio_get_level(ow_pin)) return ESP_FAIL;
 	ets_delay_us(410);
+toggle_short(2);
 //	if (!gpio_get_level(ow_pin)) return ESP_FAIL;	// TESTING
 
 	return ESP_OK;
@@ -150,7 +186,7 @@ toggle(1);	// DEBUG
 
 esp_err_t ow_depower (void)
 {
-	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
+	DS18B20_GO_INPUT ();
 
 	return ESP_OK;
 }
@@ -162,10 +198,14 @@ esp_err_t ow_init (uint8_t pin)
 	ow_pin = pin;
 	gpio_pad_select_gpio(ow_pin);
 
+#if 000
 #if ONEWIRE_INTERNAL_PULLUP
 	gpio_set_pull_mode(ow_pin, GPIO_PULLUP_ONLY);
 #endif
 	gpio_set_direction(ow_pin, GPIO_MODE_INPUT);
+#else
+	DS18B20_GO_INPUT ();
+#endif
 
 	Dbg (ow_reset());
 	if (ESP_OK != ret)

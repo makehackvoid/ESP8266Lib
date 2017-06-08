@@ -15,28 +15,12 @@
 
 /* udp.c */
 void toggle(int ntimes);
+void toggle_short(int ntimes);
 void get_time (struct timeval *now);
 
 int do_log;
 
 #define LOG_FLUSH	1	// 0=no flush after each Log message
-
-#define Dbg(f) \
-do { \
-	ret = (f); \
-	if (ESP_OK != ret) \
-		Log ("### %s:%d: ret=%d %s", __FILE__, __LINE__, ret, #f); \
-} while (0)
-
-#define DbgR(f) \
-do { \
-	esp_err_t _ret_; \
-	_ret_ = (f); \
-	if (ESP_OK != _ret_) { \
-		Log ("### %s:%d: ret=%d %s", __FILE__, __LINE__, _ret_, #f); \
-		return _ret_; \
-	} \
-} while (0)
 
 #define Log(fmt,...) \
 if (do_log) do { \
@@ -47,8 +31,30 @@ if (do_log) do { \
 	if (LOG_FLUSH) fflush(stdout); \
 } while (0)
 
-#define Mark() \
-	Log ("### %s:%d: LOG", __FILE__, __LINE__)
+
+#define Mark(fmt,...) \
+do { \
+	Log ("### %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
+} while (0)
+
+#define Dbg(f) \
+do { \
+	ret = (f); \
+	if (ESP_OK != ret) \
+		Mark ("ret=%d %s", ret, #f); \
+} while (0)
+
+
+#define DbgR(f) \
+do { \
+	esp_err_t _ret_; \
+	_ret_ = (f); \
+	if (ESP_OK != _ret_) { \
+		Mark ("ret=%d %s", _ret_, #f); \
+		return _ret_; \
+	} \
+} while (0)
+
 
 #define delay_us(us)	ets_delay_us (us)
 #define delay_ms(ms) \
