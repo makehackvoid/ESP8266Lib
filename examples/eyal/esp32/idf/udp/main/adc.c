@@ -18,14 +18,13 @@
 #define ADC_ATTEN_RATIO	(4095. / 2)
 
 #define VDD_CHANNEL	ADC1_CHANNEL_4		// gpio 32 
-#define VDD_DIVIDER	3.065	// measured on dividing resistors
+#define VDD_DIVIDER	2			// 1m+1m
 
 #define BAT_CHANNEL	ADC1_CHANNEL_5		// gpio 33
-#define BAT_DIVIDER	2.99	// measured on dividing resistors
+#define BAT_DIVIDER	3			// 1m+2m
 
-esp_err_t read_adc (float *bat, float *vdd)
+esp_err_t read_vdd (float *vdd)
 {
-	*bat = 0.0;
 	*vdd = 0.0;
 
 	DbgR (adc1_config_width(ADC_WIDTH));
@@ -33,8 +32,18 @@ esp_err_t read_adc (float *bat, float *vdd)
 	DbgR (adc1_config_channel_atten(VDD_CHANNEL, ADC_ATTEN));
 	*vdd = adc1_get_voltage(VDD_CHANNEL) / (ADC_ATTEN_RATIO / VDD_DIVIDER);
 
+	return ESP_OK;
+}
+
+esp_err_t read_bat (float *bat)
+{
+	*bat = 0.0;
+
+	DbgR (adc1_config_width(ADC_WIDTH));
+
 	DbgR (adc1_config_channel_atten(BAT_CHANNEL, ADC_ATTEN));
 	*bat = adc1_get_voltage(BAT_CHANNEL) / (ADC_ATTEN_RATIO / BAT_DIVIDER);
 
 	return ESP_OK;
 }
+
