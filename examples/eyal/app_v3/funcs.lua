@@ -118,6 +118,7 @@ end
 local do_vdd_read_cycle = false
 
 function safe_dsleep(us, mode)
+	if us < 10 then us = 10 end	-- SDK 2.1.0 cannot handle short periods
 	if print_log then
 		tmr.create():alarm(5, tmr.ALARM_SINGLE, function()
 			dsleep (us, mode, 1)
@@ -160,7 +161,8 @@ function restart_really(time_left)
 --		rtctime.dsleep_aligned ((sleep_time+dsleep_delay)*rtc_rate, 0, rf_mode)
 		safe_dsleep (time_left, rf_mode)
 	else
-		Log("doing dsleep for restart")
+		Log("doing dsleep(1) for restart")
+print("doing dsleep(1) for restart\n")
 		safe_dsleep (1, rf_mode)
 	end
 end
@@ -209,6 +211,12 @@ function restart(time_left)
 			time_left = time_left - t_delay*1000
 		else
 			Log("no grace delay")
+		end
+
+		if nil ~= forced_grace_time and t_delay < forced_grace_time then
+			Log("forced grace delay of %dms for %s", forced_grace_time, clientID)
+			time_left = time_left - (forced_grace_time-t_delay)*1000
+			t_delay = forced_grace_time
 		end
 	end
 

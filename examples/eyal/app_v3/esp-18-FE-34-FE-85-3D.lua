@@ -20,11 +20,15 @@ sleep_time    = sleep_time    or 60
 rtc_rate      = rtc_rate      or 1.021	-- empirical for 1m
 vdd_factor    = vdd_factor    or 1.015	-- empirical
 adc_factor    = adc_factor    or 1	-- empirical
+
+--[[
 read_device   = read_device   or "bme280"
 i2c_SDA       = i2c_SDA       or gpio0
 i2c_SCL       = i2c_SCL       or gpio2
---read_device   = read_device   or "ds18b20"
---ow_pin        = ow_pin        or gpio4
---ow_addr       = ow_addr       or {
---				"\040\210\144\118\006\000\000\115",
---			  }
+--]]
+
+read_device   = read_device   or "ds18b20"
+ow_pin        = ow_pin        or gpio4
+ow_addr       = ow_addr       or {
+				"\040\095\190\242\006\000\000\094",
+			}

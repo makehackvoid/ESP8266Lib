@@ -40,15 +40,9 @@ local function give_up()
 	doSleep()
 end
 
-local retry_done = false
+local retry_count = 0
 
 local function retry()
-	if retry_done then
-		Trace(3)
-		give_up()
-		return
-	end
-
 	Trace(2)
 	Log ("reset WiFi")
 	local changed = false
@@ -56,23 +50,31 @@ local function retry()
 	local ip, nm, gw = sta.getip()
 	if not ip or ip ~= clientIP or not gw or gw ~= netGW then
 		Trace(7, true)
-		sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})
 		changed = true
 	end
+	sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})	-- always set
+
 	local cssid, cpass = sta.getconfig()
 	if not cssid or cssid ~= ssid or not cpass or cpass ~= passphrase then
 		Trace(8, true)
-		wifi.setmode(wifi.STATION)
---		sta.config(ssid, passphrase, 1, bssid)	-- deprecated
-		sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
 		changed = true
 	end
-	if not changed then
+	wifi.setmode(wifi.STATION)	-- always set
+	sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
+
+	if not changed then		-- no change, do not retry
+--	if retry_count >= 2 then	-- already tried twice
 		Trace(9)
 		give_up()
 		return
 	end
-	retry_done = true
+	retry_count = retry_count + 1
+
+	timeout:alarm(wifi_timeout, tmr.ALARM_SINGLE, function()
+		Trace(3)
+		Log("connection timeout again, status=%d", sta.status())
+		give_up()
+	end)
 end
 
 local function have_connection(ip)
@@ -80,7 +82,7 @@ local function have_connection(ip)
 	cleanup()
 	Log ("WiFi available after %.6f seconds, ip=%s",
 		time_wifi/1000000, ip)
-	if retry_done then
+	if retry_count > 0 then
 		incrementCounter(rtca_failSoft)
 	end
 	if nil == runCount then
@@ -115,9 +117,8 @@ local function dowifi()
 	end
 
 	timeout:alarm(wifi_timeout, tmr.ALARM_SINGLE, function()
-		Log("connection timeout")
-		Trace(11)
-		give_up()
+		Log("connection timeout, status=%d", sta.status())
+		retry()
 	end)
 
 	eventmon.register(eventmon.STA_GOT_IP, function(T)

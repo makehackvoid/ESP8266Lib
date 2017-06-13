@@ -131,13 +131,12 @@ local function wifi_setup()
 	if not ip or ip ~= clientIP then
 		Trace (1)
 		sta.setip({ip=clientIP, netmask=netMask, gateway=netGW})
-		Log ("static IP set to '%s'", clientIP)
+		Log ("static IP set to '%s' for '%s'", clientIP, clientID)
 	end
 	local cssid = sta.getconfig()
 	if not cssid or cssid ~= ssid then
 		Trace (2, true)
 		wifi.setmode(wifi.STATION)
---		sta.config(ssid, passphrase, 1, bssid)	-- deprecated
 		sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
 		Log ("AP set to '%s'", ssid)
 	end

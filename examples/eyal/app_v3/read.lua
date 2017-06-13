@@ -22,6 +22,7 @@ local function read_ds18b20()
 		Trace(1)
 		Log("required ds18b20 failed")
 		no_ow()
+		incrementCounter(rtca_failRead);
 		return false
 	end
 	local tm = tmr.now()
@@ -33,6 +34,7 @@ local function read_ds18b20()
 		Trace(2)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
 		no_ow()
+		incrementCounter(rtca_failRead);
 		return false
 	end
 
@@ -40,6 +42,7 @@ local function read_ds18b20()
 		ow_addr = t.addrs()
 		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
+			incrementCounter(rtca_failRead);
 			return false
 		end
 	end
@@ -50,16 +53,19 @@ local good = 0
 		if tC == nil then
 			Trace(3)
 			tC = 86
+			incrementCounter(rtca_failRead);
 		else
 			good = good + 1
 			if tC == "85.0" then
 				tC = 87
+				incrementCounter(rtca_failRead);
 			elseif  tC == 127.9375 then
 				tC = 88
+				incrementCounter(rtca_failRead);
 			end
 		end
 		temp[#temp+1] = tC
-		Log("read[%d]=%.4f", #temp+1, tC)
+		Log("read[%d]=%.4f", #temp, tC)
 	end
 Trace(6+good)
 	return true
@@ -67,15 +73,20 @@ end
 
 local function read_bme280()
 	out_bleep()
-	local dev = bme280.init(i2c_SDA, i2c_SCL, 1, 1, 1, 0, 0, 0)
-		-- i2c_SDA,i2c_SCL	i2c pins
-		-- 1, 1, 1		oversampling ×1 (read once)
+	local speed = i2c.setup(0, i2c_SDA, i2c_SCL, i2c.SLOW)
+	if 0 == speed then
+		Trace(6)
+		Log ("i2c.setup failed")
+		return false
+	end
+	local dev = bme280.setup(1, 1, 1, 0, 0, 0)
+		-- 1, 1, 1		oversampling x1 (read once)
 		-- 0			Sleep mode
 		-- 0			inactive_duration (not used)
 		-- 0			Filter off
 	if nil == dev or 0 == dev then
 		Trace(4)
-		Log ("bme280.init failed")
+		Log ("bme280.setup failed")
 		return false
 	end
 	Log ("found %s", ({"none","bme280", "bmp280"})[dev])
@@ -86,6 +97,12 @@ local function read_bme280()
 		-- H	relative humidity percent
 		-- P	sea level equivalent air pressure in hectopascals (QNH)
 		-- 622	sensor location altitude in meters
+
+--	local D = 85
+--	if H and T then
+--		D = bme280.dewpoint(H, T)
+--	end
+
 	-- it is possible for *some* values to be nil!
 	local failed = 0
 	if nil == T then T =  85*100  failed = failed + 1 end
@@ -96,10 +113,12 @@ local function read_bme280()
 		Log ("bme280.read failed %d", failed)
 	end
 
+--	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d,D%d.%02d,f%d"):format(
 	weather = (" w=T%d.%02d,P%d.%03d,H%d.%03d,f%d"):format(
 		T/100,  T%100,
 		P/1000, P%1000,
 		H/1000, H%1000,
+--		D/100,  D%100,
 		failed)
 	Log (weather)
 	temp[#temp+1] = T/100
@@ -108,7 +127,6 @@ local function read_bme280()
 	return true
 end
 
---[[	--- save memory ---
 local function read_ds3231()
 	if print_dofile then Log("calling ds3231") end
 	out_bleep()
@@ -137,7 +155,6 @@ local function read_ds3231()
 
 	return ret
 end
---]]
 
 local function have_pin(pin, pin_name, device_name)
 	if not pin then
@@ -183,12 +200,10 @@ local function doread()
 		end
 		if device == "ds3231" then
 			Log ("%s is disabled", device)
---[[	--- save memory ---
 			if have_i2c(device) then
 				read_ds3231()	-- ignore failure
 			end
 			read_ds3231 = nil
---]]
 			device = nil
 		end
 		if device then
