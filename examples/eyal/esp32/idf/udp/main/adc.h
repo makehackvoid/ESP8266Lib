@@ -2,7 +2,7 @@
 #define _ADC_H
 
 /* adc.c */
-esp_err_t read_vdd (float *vdd);
-esp_err_t read_bat (float *bat);
+esp_err_t adc_init (int width);
+esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider);
 
 #endif // _ADC_H

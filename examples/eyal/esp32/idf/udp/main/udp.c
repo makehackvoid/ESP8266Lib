@@ -61,32 +61,6 @@
 #define DISCONNECT	0	// 1= disconnect before deep sleep
 #define PRINT_MSG	0	// 1= print sent message if logging is off
 
-#if     62 == MY_HOST	// esp-32a
-#define READ_BME280	1	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define READ_VDD	1	// enable if you have it connected
-#define READ_BAT	1	// enable if you have it connected
-				// see adc.c for pins used, I use gpio 32 & 33
-#define BAT_VOLTAGE	5.0
-
-#elif 64 == MY_HOST	// esp-32b
-#define READ_BME280	0	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define READ_VDD	1	// enable if you have it connected
-#define READ_BAT	1	// enable if you have it connected
-#define BAT_VOLTAGE	3.3
-
-#elif 65 == MY_HOST	// esp-32c
-#define READ_BME280	0	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define READ_VDD	1	// enable if you have it connected
-#define READ_BAT	1	// enable if you have it connected
-#define BAT_VOLTAGE	3.3
-
-#else
-#error unknown host MY_HOST
-#endif
-
 #define I2C_SCL		22	// i2c
 #define I2C_SDA		21	// i2c
 #define OUT_PIN		19	// OUT toggled to mark program steps
@@ -94,6 +68,46 @@
 #define ERROR_PIN	17	// OUT indicate a failure (debug). -ve to disable
 #define TOGGLE_PIN	16	// IN  pull low to disable toggle()
 #define DBG_PIN		15	// IN  pull low to silence Log()
+
+				// adc pins are 32-39
+#define VDD_PIN		32	// undef to disable
+#define VDD_DIVIDER	2	// 1m.1m
+#define VDD_ATTEN	6	// 6db
+
+#define BAT_PIN		33	// undef to disable
+#define BAT_DIVIDER	3	// 1m.2m
+#define BAT_ATTEN	6	// 6db
+
+#define V1_PIN		34	// undef to disable
+#define V1_DIVIDER	1	// resistor network
+#define V1_ATTEN	6	// 6db
+
+#if   62 == MY_HOST	// esp-32a
+#define READ_BME280	1	// enable if you have one connected
+#define READ_DS18B20	1	// enable if you have one connected
+#define BAT_VOLTAGE	5.0
+
+#elif 64 == MY_HOST	// esp-32b
+#define READ_BME280	0	// enable if you have one connected
+#define READ_DS18B20	1	// enable if you have one connected
+#define BAT_VOLTAGE	3.3
+#undef  V1_PIN
+
+#elif 65 == MY_HOST	// esp-32c
+#define READ_BME280	0	// enable if you have one connected
+#define READ_DS18B20	1	// enable if you have one connected
+#define BAT_VOLTAGE	3.3
+#undef  V1_PIN
+
+#else
+#error unknown host MY_HOST
+#endif
+
+#define READ_ADC	(defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
+
+#if READ_ADC
+#include "adc.h"
+#endif
 
 #if OUT_PIN < 0
 #undef TOGGLE_PIN
@@ -112,10 +126,6 @@ RTC_DATA_ATTR static int bme280_failures = 0;
 //#define ROM_ID	(uint8_t *)"\x28\xc5\x3e\x76\x06\x00\x00\x3c"	// esp-32b
 //#define ROM_ID	(uint8_t *)"\x28\xa9\x7f\x78\x06\x00\x00\xb3"	// esp-32c
 RTC_DATA_ATTR static int ds18b20_failures = 0;
-#endif
-
-#if READ_VDD || READ_BAT
-#include "adc.h"
 #endif
 
 int do_log = 1;
@@ -274,7 +284,7 @@ static esp_err_t ds18b20_temp (float *temp)
 
 static int ntemps;
 static float temps[2];
-static float bat, vdd;
+static float bat, vdd, v1;
 static char weather[40] = "";
 static float ds18b20_failure_reason = 0;
 static uint64_t time_readings_us = 0;
@@ -340,19 +350,30 @@ static esp_err_t do_readings (void)
 	if (0 == ntemps)
 		temps[ntemps++] = 0;
 
-#if READ_VDD
-	Dbg (read_vdd (&vdd));
+#if READ_ADC
+	Dbg (adc_init (12));
+#endif
+
+#ifdef VDD_PIN
+	Dbg (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
 	if (ESP_OK == rval) rval = ret;
 #else
 	vdd = 3.3;
-#endif // READ_VDD
+#endif
 
-#if READ_BAT
-	Dbg (read_bat (&bat));
+#ifdef BAT_PIN
+	Dbg (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
 	if (ESP_OK == rval) rval = ret;
 #else
 	bat = BAT_VOLTAGE;
-#endif // READ_BAT
+#endif
+
+#ifdef V1_PIN
+	Dbg (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
+	if (ESP_OK == rval) rval = ret;
+#else
+	v1 = 0;
+#endif
 
 	time_readings_us = _get_time_since_boot() - time_readings_us;
 	xEventGroupSetBits(event_group, HAVE_READINGS);
@@ -519,6 +540,22 @@ Log ("xEventGroupWaitBits");
 		blen -= len;
 	}
 
+	len = snprintf (buf, blen,
+		" v=%.3f,%.3f,%.3f",
+		bat, vdd, v1);
+	if (len > 0) {
+		buf += len;
+		blen -= len;
+	}
+
+	len = snprintf (buf, blen,
+		" radio=s%d",
+		-rssi);
+	if (len > 0) {
+		buf += len;
+		blen -= len;
+	}
+
 	if ('\0' != weather[0]) {
 		len = snprintf (buf, blen,
 			"%s",
@@ -532,14 +569,6 @@ Log ("xEventGroupWaitBits");
 	len = snprintf (buf, blen,
 		" adc=%.3f vdd=%.3f",
 		bat, vdd);
-	if (len > 0) {
-		buf += len;
-		blen -= len;
-	}
-
-	len = snprintf (buf, blen,
-		" radio=s%d",
-		-rssi);
 	if (len > 0) {
 		buf += len;
 		blen -= len;

@@ -12,37 +12,98 @@
 
 #include <driver/adc.h>
 
-#define ADC_WIDTH       ADC_WIDTH_12Bit
-
 #define ADC_ATTEN	ADC_ATTEN_6db
 #define ADC_ATTEN_RATIO	(4095. / 2)
 
-#define VDD_CHANNEL	ADC1_CHANNEL_4		// gpio 32 
-#define VDD_DIVIDER	2			// 1m+1m
+static int adc_range = 4096-1;
 
-#define BAT_CHANNEL	ADC1_CHANNEL_5		// gpio 33
-#define BAT_DIVIDER	3			// 1m+2m
-
-esp_err_t read_vdd (float *vdd)
+esp_err_t adc_init (int width)
 {
-	*vdd = 0.0;
+	adc_atten_t adc_width;
 
-	DbgR (adc1_config_width(ADC_WIDTH));
+	switch (width) {
+	case  9:
+		adc_width = ADC_WIDTH_9Bit;
+		break;
+	case 10:
+		adc_width = ADC_WIDTH_10Bit;
+		break;
+	case 11:
+		adc_width = ADC_WIDTH_11Bit;
+		break;
+	case 12:
+		adc_width = ADC_WIDTH_12Bit;
+		break;
+	default:
+		return ESP_FAIL;
+	}
 
-	DbgR (adc1_config_channel_atten(VDD_CHANNEL, ADC_ATTEN));
-	*vdd = adc1_get_voltage(VDD_CHANNEL) / (ADC_ATTEN_RATIO / VDD_DIVIDER);
+	DbgR (adc1_config_width(adc_width));
+	adc_range = (1<<width) - 1;
 
 	return ESP_OK;
 }
 
-esp_err_t read_bat (float *bat)
+esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 {
-	*bat = 0.0;
+	adc1_channel_t channel;
+	adc_atten_t adc_atten;
+	float ratio;
 
-	DbgR (adc1_config_width(ADC_WIDTH));
+	*adc = 0.0;
 
-	DbgR (adc1_config_channel_atten(BAT_CHANNEL, ADC_ATTEN));
-	*bat = adc1_get_voltage(BAT_CHANNEL) / (ADC_ATTEN_RATIO / BAT_DIVIDER);
+	switch (pin) {
+	case  36:
+		channel = ADC1_CHANNEL_0;
+		break;
+	case  37:
+		channel = ADC1_CHANNEL_1;
+		break;
+	case  38:
+		channel = ADC1_CHANNEL_2;
+		break;
+	case  39:
+		channel = ADC1_CHANNEL_3;
+		break;
+	case  32:
+		channel = ADC1_CHANNEL_4;
+		break;
+	case  33:
+		channel = ADC1_CHANNEL_5;
+		break;
+	case  34:
+		channel = ADC1_CHANNEL_6;
+		break;
+	case  35:
+		channel = ADC1_CHANNEL_7;
+		break;
+	default:
+		return ESP_FAIL;
+	}
+
+	switch (atten) {
+	case 0:
+		adc_atten = ADC_ATTEN_0db;
+		ratio = adc_range / 1. / divider;
+		break;
+	case 2:
+		adc_atten = ADC_ATTEN_2_5db;
+		ratio = adc_range / 1.34 / divider;
+		break;
+	case 6:
+		adc_atten = ADC_ATTEN_6db;
+		ratio = adc_range / 2. / divider;
+		break;
+	case 11:
+		adc_atten = ADC_ATTEN_11db;
+		ratio = adc_range / 3.6 / divider;
+		break;
+	default:
+		return ESP_FAIL;
+	}
+
+	DbgR (adc1_config_channel_atten(channel, adc_atten));
+	*adc = adc1_get_voltage(channel) / ratio;
 
 	return ESP_OK;
 }
