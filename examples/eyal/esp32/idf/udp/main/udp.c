@@ -56,7 +56,7 @@
 #endif
 
 #define SLEEP_S		 5	// seconds
-#define GRACE_MS	35	// time to wait before deep sleep to drain wifi tx
+#define GRACE_MS	40	// time to wait before deep sleep to drain wifi tx
 
 #define DISCONNECT	0	// 1= disconnect before deep sleep
 #define PRINT_MSG	0	// 1= print sent message if logging is off
@@ -130,8 +130,17 @@ RTC_DATA_ATTR static int ds18b20_failures = 0;
 
 int do_log = 1;
 
-uint64_t rtc_time_get(void);		// raw RTC time
+uint64_t rtc_time_get(void);		// raw RTC time in ticks
+
+// the following function is my exported version added in components/newlib/time.c
+// I also adjusted the standard 'get_rtc_time_us' to not truncate to uint32_t.
+// uint64_t _get_rtc_time_us() {
+//	return (rtc_time_get() * esp_clk_slowclk_cal_get()) >> RTC_CLK_CAL_FRACT;}
 uint64_t _get_rtc_time_us(void);	// adjusted rtc_time_get()
+
+// the following function is my exported version added in components/newlib/time.c
+//  uint64_t _get_time_since_boot() {
+//	return get_time_since_boot();}
 uint64_t _get_time_since_boot(void);	// FRC
 
 RTC_DATA_ATTR static int runCount = 0;
@@ -157,8 +166,8 @@ static int sent = 0;
 static int retry_count = 0;
 
 static EventGroupHandle_t event_group;
-const int GOT_IP = BIT0;	// not used
-const int HAVE_READINGS = BIT1;	// used
+const int HAVE_WIFI = BIT0;
+const int NO_WIFI = BIT1;
 
 
 void flush_uart (void)
@@ -289,6 +298,14 @@ static char weather[40] = "";
 static float ds18b20_failure_reason = 0;
 static uint64_t time_readings_us = 0;
 
+// save first failure in 'rval'
+//
+#define DbgRval(f) \
+do { \
+	Dbg (f); \
+	if (ESP_OK == rval) rval = ret; \
+} while (0)
+
 static esp_err_t do_readings (void)
 {
 	esp_err_t ret;
@@ -302,14 +319,12 @@ static esp_err_t do_readings (void)
 	rval = ESP_OK;
 
 #if READ_DS18B20
-	Dbg (ds18b20_temp (&temp));
-	if (ESP_OK == rval) rval = ret;
+	DbgRval (ds18b20_temp (&temp));
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
 		toggle_error();		// tell DSO
 		++ds18b20_failures;
 		ds18b20_failure_reason = temp;
-		Dbg (ds18b20_temp (&temp));	// one retry
-		if (ESP_OK == rval) rval = ret;
+		DbgRval (ds18b20_temp (&temp));	// one retry
 		if (ret != ESP_OK || temp >= BAD_TEMP) {
 			toggle_error();		// tell DSO
 			++failReadHard;
@@ -325,10 +340,9 @@ static esp_err_t do_readings (void)
 	float qfe, h, qnh;
 	int fail;
 
-	rval = ESP_OK;
+	DbgRval (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
 
-	Dbg (bme280_read (622, &temp, &qfe, &h, &qnh));
-	if (ESP_OK == rval) rval = ret;
+	DbgRval (bme280_read (622, &temp, &qfe, &h, &qnh));
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
 		toggle_error();		// tell DSO
 		++failRead;
@@ -351,35 +365,32 @@ static esp_err_t do_readings (void)
 		temps[ntemps++] = 0;
 
 #if READ_ADC
-	Dbg (adc_init (12));
+	DbgRval (adc_init (12));
 #endif
 
 #ifdef VDD_PIN
-	Dbg (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
-	if (ESP_OK == rval) rval = ret;
+	DbgRval (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
 #else
 	vdd = 3.3;
 #endif
 
 #ifdef BAT_PIN
-	Dbg (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
-	if (ESP_OK == rval) rval = ret;
+	DbgRval (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
 #else
 	bat = BAT_VOLTAGE;
 #endif
 
 #ifdef V1_PIN
-	Dbg (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
-	if (ESP_OK == rval) rval = ret;
+	DbgRval (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
 #else
 	v1 = 0;
 #endif
 
 	time_readings_us = _get_time_since_boot() - time_readings_us;
-	xEventGroupSetBits(event_group, HAVE_READINGS);
 
 	return rval;
 }
+#undef DbgRval
 
 #if 000
 From include/rom/rtc.h:
@@ -422,19 +433,15 @@ typedef enum {
 } RESET_REASON;		// from rtc_get_reset_reason()
 #endif
 
-static void format_msg (char *msg, int mlen)
+static int format_message (char *message, int mlen)
 {
 	struct timeval now;
 	uint64_t sleep_us;
 	uint64_t sleep_ticks;
-	char *buf = msg;
+	char *buf = message;
 	int blen = mlen;
 	int len;
 	int i;
-
-Log ("xEventGroupWaitBits");
-	xEventGroupWaitBits(event_group, HAVE_READINGS,
-		false, true, 100 / portTICK_PERIOD_MS);
 
 	sleep_us = (sleep_start_us > 0) ? app_start_us - sleep_start_us : 0;
 	sleep_ticks = (sleep_start_ticks > 0) ? app_start_ticks - sleep_start_ticks : 0;
@@ -586,38 +593,40 @@ Log ("xEventGroupWaitBits");
 
 #if PRINT_MSG
 	if (!do_log)
-		LogF ("%s", msg);
+		LogF ("%s", message);
 #endif
 
 	++runCount;
+
+	return mlen - blen;
 }
 
-static void send_msg (void)
+static void send_message (char * message, int mlen)
 {
 	int mysocket;
 	struct sockaddr_in remote_addr;
-	char msg[500];
-
-	format_msg (msg, sizeof(msg));
 
 	mysocket = socket(AF_INET, SOCK_DGRAM, 0);
 	remote_addr.sin_family = AF_INET;
 	remote_addr.sin_port = htons(SVR_PORT);
 	remote_addr.sin_addr.s_addr = inet_addr(SVR_IP);
 
-Log ("Sending '%s'", msg);
+Log ("sending '%s'", message);
 	toggle(2);
-	sendto(mysocket, msg, strlen(msg), 0,
+	sendto(mysocket, message, mlen, 0,
 		(struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
 
 static void do_grace (void)
 {
+	if (!sent)
+		return;
+
 #if defined(GRACE_MS) && GRACE_MS > 0
 	toggle(3);
 Log ("delay %dms", GRACE_MS);
 	uint64_t grace_us = _get_time_since_boot();
-	delay_ms (GRACE_MS);	// time to drain wifi queue
+	delay_ms (GRACE_MS + do_log*5);	// time to drain wifi queue
 	lastGrace = (int)(_get_time_since_boot() - grace_us);
 #endif
 }
@@ -629,8 +638,16 @@ static void finish (void)
 	else if (retry_count > 0)
 		++failSoft;
 
-#if !DISCONNECT
-	do_grace ();
+	if (sent)
+		do_grace ();
+
+#if DISCONNECT
+Log ("esp_wifi_disconnect");
+	DbgR (esp_wifi_disconnect());
+
+Log ("xEventGroupWaitBits");
+	xEventGroupWaitBits(event_group, NO_WIFI,
+		false, false, 100 / portTICK_PERIOD_MS);
 #endif
 
 Log ("esp_deep_sleep %ds", SLEEP_S);
@@ -671,7 +688,6 @@ Log("event_handler: SYSTEM_EVENT %d", event->event_id);
 	case SYSTEM_EVENT_STA_START:
 		toggle(1);
 Log ("SYSTEM_EVENT_STA_START");
-
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
 		toggle(1);
@@ -682,11 +698,9 @@ Log ("SYSTEM_EVENT_STA_START");
 		rssi = wifidata.rssi;
 Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d", rssi);
 }
-
 		break;
 	case SYSTEM_EVENT_STA_GOT_IP:
 		toggle(1);
-		xEventGroupSetBits(event_group, GOT_IP);
 {
 char ip[16], nm[16], gw[16];
 Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
@@ -694,25 +708,15 @@ Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.netmask, nm, sizeof(nm)),
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.gw, gw, sizeof(gw)));
 }
-
-		send_msg();
-
-#if DISCONNECT
-		sent = 1;
-		do_grace ();
-
-Log ("esp_wifi_disconnect");
-		DbgR (esp_wifi_disconnect());
-#else
-		finish ();
-#endif
+		xEventGroupClearBits(event_group, NO_WIFI);
+		xEventGroupSetBits(event_group, HAVE_WIFI);
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 Log ("SYSTEM_EVENT_STA_DISCONNECTED");
-		xEventGroupClearBits(event_group, GOT_IP);
+		xEventGroupClearBits(event_group, HAVE_WIFI);
 
 		if (sent || ++retry_count > 1)
-			finish ();
+			xEventGroupSetBits(event_group, NO_WIFI);
 		else {
 Log ("esp_wifi_connect");
 			DbgR (esp_wifi_connect());	// try once again
@@ -726,15 +730,8 @@ Log ("ignoring SYSTEM_EVENT %d", event->event_id);
 	return ESP_OK;
 }
 
-static esp_err_t app(void)
+static esp_err_t wifi_setup(void)
 {
-	esp_err_t ret;
-
-#if READ_BME280
-	Dbg (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
-	// failure logged but ignored
-#endif // READ_BME280
-
 #if 000		// no effect
 Log ("esp_phy_load_cal_and_init");
 	esp_phy_load_cal_and_init();	// no effect
@@ -744,9 +741,6 @@ Log ("tcpip_adapter_init");
 	tcpip_adapter_init();
 
 	DbgR (set_ip());
-
-Log ("xEventGroupCreate");
-	event_group = xEventGroupCreate();
 
 Log ("esp_event_loop_init");
 	DbgR (esp_event_loop_init(event_handler, NULL));
@@ -777,14 +771,47 @@ Log ("esp_wifi_start");
 Log ("esp_wifi_connect");
 	DbgR (esp_wifi_connect());
 
+	return ESP_OK;
+}
+
+static esp_err_t app (void)
+{
+	EventBits_t bits;
+	char message[500];
+	int mlen;
+
 	(void)do_readings();
+
+	xEventGroupWaitBits(event_group, HAVE_WIFI|NO_WIFI,
+		false, false, 2000 / portTICK_PERIOD_MS);
+	bits = xEventGroupGetBits (event_group);
+	if (NO_WIFI & bits) {
+Log ("no WiFi, aborting");
+		return ESP_FAIL;
+	}
+
+// need to do this late to have wifi timing
+	mlen = format_message (message, sizeof(message));
+
+	send_message (message, mlen);
+	sent = 1;
 
 	return ESP_OK;
 }
 
 static void main_task(void *param)
 {
-	(void)app();
+	esp_err_t ret;
+
+Log ("xEventGroupCreate");
+	event_group = xEventGroupCreate();
+
+	Dbg (wifi_setup ());
+	if (ESP_OK == ret) {
+		Dbg (app());
+
+		finish ();
+	}
 
 	while (1) vTaskDelay(5000/portTICK_PERIOD_MS);	// in 5s we will sleep anyway
 }
@@ -821,6 +848,8 @@ void app_main ()
 // turn off internal messages below ERROR level
 	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
+	Log ("app built at %s %s", __DATE__, __TIME__);
+
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
 
@@ -834,32 +863,4 @@ void app_main ()
 
 	xTaskCreate(main_task, "udp", 10240, NULL, 20, NULL);
 }
-
-#if 000	///////////////////////////////// notes ///////////////////////////////
-
-adc
-===
-	4.3 Ultra-Low-Noise Analog Pre-Amplifier
-	4.6 Temperature Sensor
-
-clock sources
-=============
-	32KHz crystal clock (external)
-		8KHz by /4
-	150KHz RC (internal)
-	8MHz (internal)
-		->31.25KHz by /256
-	4 GP timers - 64 bits
-	Main WDT
-	RTC WDT
-
-Drawing in the technical doco 3.2.1 shows the RTC can be clocked from
-slow:
-	RTC_CLK		150.00KHz
-	XTL32K_CLK	 32.00KHz
-	8M_D256_CLK	 31.25KHz
-fast:
-	RTC8M_CLK	8MHz
-	XTL_CLK/DIV
-#endif
 

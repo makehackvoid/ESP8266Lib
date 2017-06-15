@@ -38,7 +38,7 @@
 #define ONEWIRE_CRC8_TABLE	1
 #define ONEWIRE_CRC16		1
 
-#define DS18B20_GO_INPUT() \
+#define OW_GO_INPUT() \
 do { \
 	if (ONEWIRE_INTERNAL_PULLUP) \
 		gpio_set_pull_mode(ow_pin, GPIO_PULLUP_ONLY); \
@@ -85,12 +85,12 @@ toggle_short (1);
 #if ONEWIRE_POWERED
 		gpio_set_level (ow_pin, 1);
 #else
-		DS18B20_GO_INPUT ();
+		OW_GO_INPUT ();
 #endif
 	}
 
 #if ONEWIRE_POWERED
-	DS18B20_GO_INPUT ();
+	OW_GO_INPUT ();
 #endif
 
 	return ESP_OK;
@@ -118,7 +118,7 @@ toggle_short(1);
 		gpio_set_level(ow_pin, 0);
 		delay_us(3);
 
-		DS18B20_GO_INPUT ();
+		OW_GO_INPUT ();
 		delay_us(7);		// measured: data ready in 4us, gone in 28us
 		d |= gpio_get_level (ow_pin) << b;
 
@@ -140,7 +140,7 @@ toggle_short(4);
 	delay_us(480);
 
 toggle_short(1);
-	DS18B20_GO_INPUT ();
+	OW_GO_INPUT ();
 	delay_us(70);	// measured: low in 30us, high in 140us
 toggle_short(1);
 	if (gpio_get_level(ow_pin)) return ESP_FAIL;
@@ -153,7 +153,19 @@ toggle_short(1);
 
 esp_err_t ow_depower (void)
 {
-	DS18B20_GO_INPUT ();
+	if (OW_NO_PIN == ow_pin) DbgR (ESP_FAIL);
+
+	OW_GO_INPUT ();
+
+	return ESP_OK;
+}
+
+static esp_err_t ow_wait_for_high (int us)
+{
+	for (; !gpio_get_level (ow_pin); --us) {
+		if (us <= 0) return ESP_FAIL;
+		delay_us(1);
+	}
 
 	return ESP_OK;
 }
@@ -165,7 +177,12 @@ esp_err_t ow_init (uint8_t pin)
 	ow_pin = pin;
 	gpio_pad_select_gpio(ow_pin);
 
-	DS18B20_GO_INPUT ();
+	OW_GO_INPUT ();
+	delay_us(10);	// or else I see:
+			//  E (238) gpio: gpio_set_pull_mode(211): GPIO number error
+			//  E (248) gpio: gpio_set_direction(241): GPIO number error
+
+	(void)ow_wait_for_high (480);
 
 	Dbg (ow_reset());
 	if (ESP_OK != ret)
@@ -259,7 +276,7 @@ uint8_t onewire_crc8(const uint8_t *addr, uint8_t len)
 uint16_t onewire_crc16(const uint8_t* input, uint16_t len, uint16_t crc)
 {
     static const uint8_t oddparity[16] =
-        { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
+	{ 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
 
     uint16_t i;
     for (i = 0 ; i < len ; i++) {
@@ -270,7 +287,7 @@ uint16_t onewire_crc16(const uint8_t* input, uint16_t len, uint16_t crc)
       crc >>= 8;
 
       if (oddparity[cdata & 0x0F] ^ oddparity[cdata >> 4])
-          crc ^= 0xC001;
+	crc ^= 0xC001;
 
       cdata <<= 6;
       crc ^= cdata;
@@ -290,14 +307,14 @@ uint16_t onewire_crc16(const uint8_t* input, uint16_t len, uint16_t crc)
 //    WriteBytes(net, buf, 3);    // Write 3 cmd bytes
 //    ReadBytes(net, buf+3, 10);  // Read 6 data bytes, 2 0xFF, 2 CRC16
 //    if (!CheckCRC16(buf, 11, &buf[11])) {
-//        // Handle error.
+//	// Handle error.
 //    }
 //
 // @param input - Array of bytes to checksum.
 // @param len - How many bytes to use.
 // @param inverted_crc - The two CRC16 bytes in the received data.
-//                       This should just point into the received data,
-//                       *not* at a 16-bit integer.
+//		This should just point into the received data,
+//		*not* at a 16-bit integer.
 // @param crc - The crc starting value (optional)
 // @return True, iff the CRC matches.
 bool onewire_check_crc16(const uint8_t* input, uint16_t len, const uint8_t* inverted_crc, uint16_t crc)

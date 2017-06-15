@@ -17,7 +17,8 @@ void get_time (struct timeval *now);
 
 int do_log;
 
-#define LOG_FLUSH	0	// 1= flush uart after each Log message
+#define LOG_FLUSH	1	// 1= flush uart after each Log message
+#define LOG_ERRORS	1	// 1= always log errors
 
 #define LogF(fmt,...) \
 do { \
@@ -39,11 +40,19 @@ do { \
 	Log ("### %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
 } while (0)
 
+#define MarkE(fmt,...) \
+do { \
+	if (LOG_ERRORS) \
+		LogF ("### %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
+	else \
+		Log  ("### %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
+} while (0)
+
 #define Dbg(f) \
 do { \
 	ret = (f); \
 	if (ESP_OK != ret) \
-		Mark ("ret=%d %s", ret, #f); \
+		MarkE ("ret=%d %s", ret, #f); \
 } while (0)
 
 
@@ -52,7 +61,7 @@ do { \
 	esp_err_t _ret_; \
 	_ret_ = (f); \
 	if (ESP_OK != _ret_) { \
-		Mark ("ret=%d %s", _ret_, #f); \
+		MarkE ("ret=%d %s", _ret_, #f); \
 		return _ret_; \
 	} \
 } while (0)

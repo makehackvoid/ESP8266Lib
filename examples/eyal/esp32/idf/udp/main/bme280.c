@@ -200,7 +200,7 @@ esp_err_t bme280_read (int32_t alt, float *pT, float *pQFE, float *pH, float *pQ
 
 		if (0x8000 == adc_H) {
 			Dbg (ESP_FAIL);
-			H = BME280_BAD_HUMI*0;
+			H = BME280_BAD_HUMI*1000;
 		} else
 			H = bme280_compensate_H(&bme280_data, adc_H);
 
@@ -264,7 +264,7 @@ static esp_err_t i2c_bme280_setup(
 	DbgR (i2c_read_bytes (BME280_I2C_ADDR, BME280_REGISTER_CHIPID, buf, 1));
 	uint8_t chipid = (uint8_t)buf[0];
 	bme280_isbme = (chipid == 0x60);
-	Log("CHIPID=0x%2x", chipid);
+	Log("bme280: CHIPID=0x%2x", chipid);
 	
 #define r16uLE_buf(reg)	(uint16_t)((reg[1] << 8) | reg[0])
 #define r16sLE_buf(reg)	(int16_t)(r16uLE_buf(reg))
