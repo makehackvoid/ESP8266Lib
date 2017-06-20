@@ -56,7 +56,9 @@
 #endif
 
 #define SLEEP_S		 5	// seconds
-#define GRACE_MS	40	// time to wait before deep sleep to drain wifi tx
+#define WIFI_GRACE_MS	50	// time to wait before deep sleep to drain wifi tx
+#define WIFI_TIMEOUT_MS	4000	// time to wait for WiFi connection
+#define WIFI_DISCONNECT_MS 100	// time to wait for WiFi disconnection
 
 #define DISCONNECT	0	// 1= disconnect before deep sleep
 #define PRINT_MSG	0	// 1= print sent message if logging is off
@@ -81,6 +83,8 @@
 #define V1_PIN		34	// undef to disable
 #define V1_DIVIDER	1	// resistor network
 #define V1_ATTEN	6	// 6db
+
+#define READ_TSENS	1	// read esp32 temperature sensor
 
 #if   62 == MY_HOST	// esp-32a
 #define READ_BME280	1	// enable if you have one connected
@@ -128,24 +132,16 @@ RTC_DATA_ATTR static int bme280_failures = 0;
 RTC_DATA_ATTR static int ds18b20_failures = 0;
 #endif
 
+#if READ_TSENS
+#include "tsens.h"
+#endif
+
 int do_log = 1;
-
-uint64_t rtc_time_get(void);		// raw RTC time in ticks
-
-// the following function is my exported version added in components/newlib/time.c
-// I also adjusted the standard 'get_rtc_time_us' to not truncate to uint32_t.
-// uint64_t _get_rtc_time_us() {
-//	return (rtc_time_get() * esp_clk_slowclk_cal_get()) >> RTC_CLK_CAL_FRACT;}
-uint64_t _get_rtc_time_us(void);	// adjusted rtc_time_get()
-
-// the following function is my exported version added in components/newlib/time.c
-//  uint64_t _get_time_since_boot() {
-//	return get_time_since_boot();}
-uint64_t _get_time_since_boot(void);	// FRC
 
 RTC_DATA_ATTR static int runCount = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_ticks = 0;
+RTC_DATA_ATTR static uint64_t prev_app_start_us = 0;
 RTC_DATA_ATTR static int failSoft = 0;
 RTC_DATA_ATTR static int failHard = 0;
 RTC_DATA_ATTR static int failRead = 0;
@@ -169,6 +165,23 @@ static EventGroupHandle_t event_group;
 const int HAVE_WIFI = BIT0;
 const int NO_WIFI = BIT1;
 
+// The following functions are missing a prototype.
+uint64_t rtc_time_get(void);		// raw RTC time in ticks
+uint64_t system_get_rtc_time(void);	// adjusted RTC time
+
+#if 001
+// this is my simplified version of _gettimeofday_r(), added to time.c
+uint64_t gettimeofday_us(void);		// FRC
+#else
+// or you can add it here:
+uint64_t gettimeofday_us(void)
+{
+	timeval tv;
+
+	gettimeofday (&tv);
+	return tv.tv_sec*1000000 + tv.tv_usec;
+}
+#endif
 
 void flush_uart (void)
 {
@@ -205,8 +218,8 @@ static void toggle_setup (void)
 #if USE_DELAY_BUSY
 void delay_us_busy (int us)
 {
-	uint64_t end = _get_time_since_boot() + us;
-	while (_get_time_since_boot() < end)
+	uint64_t end = gettimeofday_us() + us;
+	while (gettimeofday_us() < end)
 		{}
 }
 #endif
@@ -246,7 +259,7 @@ static void toggle_error (void)
 #define toggle_error()
 #endif
 
-void get_time (struct timeval *now)
+void get_time_tv (struct timeval *now)
 {
 	gettimeofday (now, NULL);
 	if (now->tv_usec < app_start.tv_usec) {
@@ -256,6 +269,10 @@ void get_time (struct timeval *now)
 
 	now->tv_sec  -= app_start.tv_sec;
 	now->tv_usec -= app_start.tv_usec;
+}
+
+static uint64_t get_time_us (void) {
+	return gettimeofday_us() - app_start_us;
 }
 
 #if READ_DS18B20
@@ -291,12 +308,14 @@ static esp_err_t ds18b20_temp (float *temp)
 }
 #endif // READ_DS18B20
 
-static int ntemps;
-static float temps[2];
+#define MAX_TEMPS		3
+static int ntemps = 0;
+static float temps[MAX_TEMPS];
 static float bat, vdd, v1;
 static char weather[40] = "";
 static float ds18b20_failure_reason = 0;
 static uint64_t time_readings_us = 0;
+static int tsens;
 
 // save first failure in 'rval'
 //
@@ -314,7 +333,7 @@ static esp_err_t do_readings (void)
 
 	flush_uart ();		// avoid uart interruptions
 
-	time_readings_us = _get_time_since_boot();
+	time_readings_us = gettimeofday_us();
 	ntemps = 0;
 	rval = ESP_OK;
 
@@ -332,8 +351,13 @@ static esp_err_t do_readings (void)
 		} else
 			++failRead;
 	}
-	temps[ntemps++] = temp;
+	if (ntemps < MAX_TEMPS) temps[ntemps++] = temp;
 #endif // READ_DS18B20
+
+#if READ_TSENS
+	DbgRval (tsens_read (&tsens));
+	if (ntemps < MAX_TEMPS) temps[ntemps++] = tsens;
+#endif
 
 #if READ_BME280
 {
@@ -357,12 +381,12 @@ static esp_err_t do_readings (void)
 	snprintf (weather, sizeof(weather),
 		" w=T%.2f,P%.3f,H%.3f,f%x",
 		temp, qnh, h, fail);
-	temps[ntemps++] = temp;
+	if (ntemps < MAX_TEMPS) temps[ntemps++] = temp;
 }
 #endif // READ_BME280
 
 	if (0 == ntemps)
-		temps[ntemps++] = 0;
+		if (ntemps < MAX_TEMPS) temps[ntemps++] = 0;
 
 #if READ_ADC
 	DbgRval (adc_init (12));
@@ -386,7 +410,7 @@ static esp_err_t do_readings (void)
 	v1 = 0;
 #endif
 
-	time_readings_us = _get_time_since_boot() - time_readings_us;
+	time_readings_us = gettimeofday_us() - time_readings_us;
 
 	return rval;
 }
@@ -438,6 +462,7 @@ static int format_message (char *message, int mlen)
 	struct timeval now;
 	uint64_t sleep_us;
 	uint64_t sleep_ticks;
+	float cycle_s;
 	char *buf = message;
 	int blen = mlen;
 	int len;
@@ -457,7 +482,7 @@ static int format_message (char *message, int mlen)
 		blen -= len;
 	}
 
-	get_time (&now);
+	get_time_tv (&now);
 
 	len = snprintf (buf, blen,
 		" times=D%lld,T%lld,s%u.%06u,r%.3f,w%.3f,t%u.%06u",
@@ -471,10 +496,14 @@ static int format_message (char *message, int mlen)
 		blen -= len;
 	}
 
+	cycle_s = (app_start_us - prev_app_start_us) / 1000000.;
+
 	len = snprintf (buf, blen,
-		" prev=L%.3f,T%d",
+		" prev=L%.3f,T%d,c%.6f,a%.6f",
 		timeLast / 1000000.,
-		(uint32_t)(timeTotal / 1000000));
+		(uint32_t)(timeTotal / 1000000),
+		cycle_s,		// last cycle  time
+		cycle_s - SLEEP_S);	// last active time
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -482,8 +511,8 @@ static int format_message (char *message, int mlen)
 
     {
 	uint64_t ticks = rtc_time_get();		// raw RTC time
-	uint64_t RTC   = _get_rtc_time_us();		// adjusted rtc_time_get()
-	uint64_t FRC   = _get_time_since_boot();	// FRC
+	uint64_t RTC   = system_get_rtc_time();		// adjusted rtc_time_get()
+	uint64_t FRC   = gettimeofday_us();		// FRC
 	len = snprintf (buf, blen,
 		" clocks=R%llu,F%llu,t%llu,g%d",
 		RTC, FRC, ticks, lastGrace);
@@ -622,12 +651,12 @@ static void do_grace (void)
 	if (!sent)
 		return;
 
-#if defined(GRACE_MS) && GRACE_MS > 0
+#if defined(WIFI_GRACE_MS) && WIFI_GRACE_MS > 0
 	toggle(3);
-Log ("delay %dms", GRACE_MS);
-	uint64_t grace_us = _get_time_since_boot();
-	delay_ms (GRACE_MS + do_log*5);	// time to drain wifi queue
-	lastGrace = (int)(_get_time_since_boot() - grace_us);
+Log ("delay %dms", WIFI_GRACE_MS);
+	uint64_t grace_us = gettimeofday_us();
+	delay_ms (WIFI_GRACE_MS + do_log*5);	// time to drain wifi queue
+	lastGrace = (int)(gettimeofday_us() - grace_us);
 #endif
 }
 
@@ -647,15 +676,16 @@ Log ("esp_wifi_disconnect");
 
 Log ("xEventGroupWaitBits");
 	xEventGroupWaitBits(event_group, NO_WIFI,
-		false, false, 100 / portTICK_PERIOD_MS);
+		false, false, WIFI_DISCONNECT_MS / portTICK_PERIOD_MS);
 #endif
 
 Log ("esp_deep_sleep %ds", SLEEP_S);
 	flush_uart();
 
 	toggle(4);
-	sleep_start_us = _get_time_since_boot();
+	sleep_start_us = gettimeofday_us();
 	sleep_start_ticks = rtc_time_get ();
+	prev_app_start_us = app_start_us;
 	timeLast = sleep_start_us - app_start_us;
 	timeTotal += timeLast;
 	esp_deep_sleep(SLEEP_S*1000000);
@@ -691,7 +721,7 @@ Log ("SYSTEM_EVENT_STA_START");
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
 		toggle(1);
-		time_wifi_us = _get_time_since_boot() - time_wifi_us;
+		time_wifi_us = gettimeofday_us() - time_wifi_us;
 {
 		wifi_ap_record_t wifidata;
 		DbgR (esp_wifi_sta_get_ap_info(&wifidata));
@@ -708,7 +738,9 @@ Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.netmask, nm, sizeof(nm)),
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.gw, gw, sizeof(gw)));
 }
+Log("xEventGroupClearBits");
 		xEventGroupClearBits(event_group, NO_WIFI);
+Log("xEventGroupSetBits");
 		xEventGroupSetBits(event_group, HAVE_WIFI);
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
@@ -765,7 +797,7 @@ Log ("esp_wifi_set_config");
 	}
 
 Log ("esp_wifi_start");
-	time_wifi_us = _get_time_since_boot();
+	time_wifi_us = gettimeofday_us();
 	DbgR (esp_wifi_start());
 
 Log ("esp_wifi_connect");
@@ -780,20 +812,26 @@ static esp_err_t app (void)
 	char message[500];
 	int mlen;
 
+Log("do_readings");
 	(void)do_readings();
 
+Log("xEventGroupWaitBits");
 	xEventGroupWaitBits(event_group, HAVE_WIFI|NO_WIFI,
-		false, false, 2000 / portTICK_PERIOD_MS);
+		false, false, WIFI_TIMEOUT_MS / portTICK_PERIOD_MS);
 	bits = xEventGroupGetBits (event_group);
 	if (NO_WIFI & bits) {
 Log ("no WiFi, aborting");
 		return ESP_FAIL;
 	}
+Log ("have WiFi");
 
 // need to do this late to have wifi timing
+Log ("format_message");
 	mlen = format_message (message, sizeof(message));
 
+Log ("send_message");
 	send_message (message, mlen);
+Log ("sent message");
 	sent = 1;
 
 	return ESP_OK;
@@ -818,9 +856,10 @@ Log ("xEventGroupCreate");
 
 void app_main ()
 {
-	app_start_us = _get_time_since_boot();
+	app_start_us = gettimeofday_us();
 	app_start_ticks = rtc_time_get ();
-	gettimeofday (&app_start, NULL);
+	app_start.tv_sec  = app_start_us / 1000000;
+	app_start.tv_usec = app_start_us % 1000000;
 
 #if TOGGLE_PIN >= 0
 	gpio_pad_select_gpio(TOGGLE_PIN);
@@ -862,5 +901,7 @@ void app_main ()
 // do we need a RTC_DATA_ATTR magic?
 
 	xTaskCreate(main_task, "udp", 10240, NULL, 20, NULL);
+//	xTaskCreatePinnedToCore(main_task, "udp", 10240, NULL, 20, NULL, 1);
+		// or use tskNO_AFFINITY
 }
 

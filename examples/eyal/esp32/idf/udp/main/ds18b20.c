@@ -114,6 +114,9 @@ esp_err_t ds18b20_convert (int wait)
 		uint8_t ready;
 		int ms = 750;
 
+		delay_ms (100);
+		ms -= 100;
+
 		do {
 			if (ms-- <= 0) DbgR (ESP_FAIL);
 			delay_ms (1);

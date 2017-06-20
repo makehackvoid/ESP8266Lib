@@ -13,7 +13,7 @@
 void flush_uart (void);
 void toggle(int ntimes);
 void toggle_short(int ntimes);
-void get_time (struct timeval *now);
+void get_time_tv (struct timeval *now);
 
 int do_log;
 
@@ -24,7 +24,7 @@ int do_log;
 do { \
 	struct timeval now; \
 \
-	get_time (&now); \
+	get_time_tv (&now); \
 	printf ("%3lu.%06lu " fmt "\n", now.tv_sec, now.tv_usec, ##__VA_ARGS__); \
 	if (LOG_FLUSH) flush_uart (); \
 } while (0)
