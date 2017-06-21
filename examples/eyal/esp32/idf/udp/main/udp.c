@@ -18,6 +18,7 @@
 #include <rom/uart.h>		// uart_tx_wait_idle()
 #include <driver/timer.h>	// timer_get_counter_time_sec()
 #include <soc/efuse_reg.h>	// needed by getChip*()
+#include <nvs_flash.h>
 
 // best to provide in CFLAGS: AP_SSID AP_PASS MY_IP MY_NAME
 #ifndef AP_SSID
@@ -167,7 +168,6 @@ const int NO_WIFI = BIT1;
 
 // The following functions are missing a prototype.
 uint64_t rtc_time_get(void);		// raw RTC time in ticks
-uint64_t system_get_rtc_time(void);	// adjusted RTC time
 
 #if 001
 // this is my simplified version of _gettimeofday_r(), added to time.c
@@ -176,9 +176,9 @@ uint64_t gettimeofday_us(void);		// FRC
 // or you can add it here:
 uint64_t gettimeofday_us(void)
 {
-	timeval tv;
+	struct timeval tv;
 
-	gettimeofday (&tv);
+	gettimeofday (&tv, NULL);
 	return tv.tv_sec*1000000 + tv.tv_usec;
 }
 #endif
@@ -510,12 +510,17 @@ static int format_message (char *message, int mlen)
 	}
 
     {
-	uint64_t ticks = rtc_time_get();		// raw RTC time
-	uint64_t RTC   = system_get_rtc_time();		// adjusted rtc_time_get()
-	uint64_t FRC   = gettimeofday_us();		// FRC
+	uint64_t system_get_rtc_time(void);
+	uint64_t get_time_since_boot_us(void);
+
+	uint64_t ticks = rtc_time_get();		// RTC time (raw)
+	uint64_t RTC   = system_get_rtc_time();		// RTC time (adjusted)
+	uint64_t FRCr  = get_time_since_boot_us();	// FRC (raw)
+	uint64_t FRC   = gettimeofday_us();		// FRC (adjusted)
+
 	len = snprintf (buf, blen,
-		" clocks=R%llu,F%llu,t%llu,g%d",
-		RTC, FRC, ticks, lastGrace);
+		" clocks=R%llu,F%llu,f%llu,t%llu,g%d",
+		RTC, FRC, FRCr, ticks, lastGrace);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -674,13 +679,15 @@ static void finish (void)
 Log ("esp_wifi_disconnect");
 	DbgR (esp_wifi_disconnect());
 
-Log ("xEventGroupWaitBits");
+Log ("xEventGroupWaitBits(NO_WIFI)");
 	xEventGroupWaitBits(event_group, NO_WIFI,
 		false, false, WIFI_DISCONNECT_MS / portTICK_PERIOD_MS);
 #endif
 
 Log ("esp_deep_sleep %ds", SLEEP_S);
 	flush_uart();
+	if (do_log)
+		delay_ms(5);	// or else we do not see final messages
 
 	toggle(4);
 	sleep_start_us = gettimeofday_us();
@@ -738,8 +745,6 @@ Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.netmask, nm, sizeof(nm)),
 	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.gw, gw, sizeof(gw)));
 }
-Log("xEventGroupClearBits");
-		xEventGroupClearBits(event_group, NO_WIFI);
 Log("xEventGroupSetBits");
 		xEventGroupSetBits(event_group, HAVE_WIFI);
 		break;
@@ -768,7 +773,10 @@ static esp_err_t wifi_setup(void)
 Log ("esp_phy_load_cal_and_init");
 	esp_phy_load_cal_and_init();	// no effect
 #endif
-	
+
+Log ("nvs_flash_init");
+	DbgR (nvs_flash_init());
+
 Log ("tcpip_adapter_init");
 	tcpip_adapter_init();
 
@@ -777,23 +785,33 @@ Log ("tcpip_adapter_init");
 Log ("esp_event_loop_init");
 	DbgR (esp_event_loop_init(event_handler, NULL));
 
-Log ("esp_wifi_init");
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+Log ("esp_wifi_init");
 	DbgR (esp_wifi_init(&cfg));
 
 	if (reset_reason != DEEPSLEEP_RESET) {	// this should be saved in flash
-Log ("esp_wifi_set_mode");
+Log ("esp_wifi_set_storage(WIFI_STORAGE_FLASH)");
+		DbgR (esp_wifi_set_storage(WIFI_STORAGE_FLASH));
+
+Log ("esp_wifi_set_mode(WIFI_MODE_STA)");
 		DbgR (esp_wifi_set_mode(WIFI_MODE_STA));
 
 		wifi_config_t wifi_config = {
 			.sta = {
 				.ssid     = AP_SSID,
 				.password = AP_PASS,
-				.bssid_set = 0
+				.bssid_set = 0,
+				.channel = 11
 			},
 		};
-Log ("esp_wifi_set_config");
+Log ("esp_wifi_set_config(ESP_IF_WIFI_STA)");
 		DbgR (esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+
+Log ("esp_wifi_set_auto_connect(true)");
+		DbgR (esp_wifi_set_auto_connect(true));
+	} else {
+Log ("esp_wifi_set_storage(WIFI_STORAGE_RAM)");
+		DbgR (esp_wifi_set_storage(WIFI_STORAGE_RAM));
 	}
 
 Log ("esp_wifi_start");
@@ -815,12 +833,16 @@ static esp_err_t app (void)
 Log("do_readings");
 	(void)do_readings();
 
-Log("xEventGroupWaitBits");
+Log("xEventGroupWaitBits(HAVE_WIFI|NO_WIFI)");
 	xEventGroupWaitBits(event_group, HAVE_WIFI|NO_WIFI,
 		false, false, WIFI_TIMEOUT_MS / portTICK_PERIOD_MS);
 	bits = xEventGroupGetBits (event_group);
-	if (NO_WIFI & bits) {
-Log ("no WiFi, aborting");
+	if (0 == bits) {
+		Log ("WiFi timed out, aborting");
+		return ESP_FAIL;
+	}
+	if (!(HAVE_WIFI & bits)) {
+		Log ("no WiFi, aborting");
 		return ESP_FAIL;
 	}
 Log ("have WiFi");
@@ -845,11 +867,10 @@ Log ("xEventGroupCreate");
 	event_group = xEventGroupCreate();
 
 	Dbg (wifi_setup ());
-	if (ESP_OK == ret) {
+	if (ESP_OK == ret)
 		Dbg (app());
 
-		finish ();
-	}
+	finish ();
 
 	while (1) vTaskDelay(5000/portTICK_PERIOD_MS);	// in 5s we will sleep anyway
 }
