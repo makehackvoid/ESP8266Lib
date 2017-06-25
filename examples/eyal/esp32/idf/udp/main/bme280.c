@@ -139,16 +139,25 @@ static esp_err_t i2c_bme280_startreadout (int wait)
 	DbgR (i2c_write_byte (BME280_I2C_ADDR, BME280_REGISTER_CONTROL, (bme280_mode & 0xFC) | BME280_FORCED_MODE));
 
 	if (wait) {
+#if 001	// status reg does not work :-(
+// See BME280 data sheet, Appendix B, 11.1 Measurement time , max no oversampling.
+// comes out as 9.3ms
+		delay_us (1250 + (2300*1) + (2300*1 + 575) + (2300*1+575));
+#else
 		uint8_t status;
-		int us;
+		int us = 10*1000;	// 10ms timeout
 
-		for (us = 10*1000;;) {	// 10ms timeout
+		delay_us (100);		// time to start...
+		us -= 100;
+
+		for (;;) {
 			DbgR (i2c_read_bytes (BME280_I2C_ADDR, BME280_REGISTER_STATUS, &status, 1));
-			if (0 == status) break;
+			if (0 != status) break;
 			if ((us -= 100) <= 0) DbgR (ESP_FAIL);
 			delay_us (100);
 		}
 Log ("startreadout waited %dus", 10*1000-us);
+#endif
 	}
 
 	return ESP_OK;

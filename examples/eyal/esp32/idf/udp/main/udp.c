@@ -30,85 +30,92 @@
 #endif
 
 #ifndef SVR_IP
-#define SVR_IP		"192.168.2.7"	// server IP
+#define SVR_IP			"192.168.2.7"	// server IP
 #endif
 
 #ifndef SVR_PORT
-#define SVR_PORT	21883		// server port
+#define SVR_PORT		21883		// server port
 #endif
 
 #ifdef MY_IP				// client IP
-#define USE_DHCPC	0		// use static IP
 
 #ifndef MY_NM
-#define MY_NM		"255.255.255.0"	// netmask
-#endif	// ifndef MY_NM
+#define MY_NM			"255.255.255.0"	// netmask
+#endif
 
 #ifndef MY_GW
-#define MY_GW		SVR_IP		// gateway
-#endif // ifndef MY_GW
-
-#else // ifdef MY_IP
-#define USE_DHCPC	1		// use dhcp
+#define MY_GW			SVR_IP		// gateway
 #endif
+
+#define USE_DHCPC		0		// use static IP
+#else // ifdef MY_IP
+#define USE_DHCPC		1		// use dhcp
+#endif // ifndef MY_IP
 
 #ifndef MY_NAME
-#define MY_NAME		"test"
+#define MY_NAME			"test"
 #endif
 
-#define SLEEP_S		 5	// seconds
-#define WIFI_GRACE_MS	50	// time to wait before deep sleep to drain wifi tx
-#define WIFI_TIMEOUT_MS	4000	// time to wait for WiFi connection
-#define WIFI_DISCONNECT_MS 100	// time to wait for WiFi disconnection
+#define SLEEP_S			 5	// seconds
+#define WIFI_GRACE_MS		50	// time to wait before deep sleep to drain wifi tx
+#define WIFI_TIMEOUT_MS		5000	// time to wait for WiFi connection
+#define WIFI_DISCONNECT_MS	100	// time to wait for WiFi disconnection
 
-#define DISCONNECT	0	// 1= disconnect before deep sleep
-#define PRINT_MSG	0	// 1= print sent message if logging is off
+#define DISCONNECT		0	// 1= disconnect before deep sleep
+#define PRINT_MSG		0	// 1= print sent message if logging is off
 
-#define I2C_SCL		22	// i2c
-#define I2C_SDA		21	// i2c
-#define OUT_PIN		19	// OUT toggled to mark program steps
-#define OW_PIN		18	// IO  ow
-#define ERROR_PIN	17	// OUT indicate a failure (debug). -ve to disable
-#define TOGGLE_PIN	16	// IN  pull low to disable toggle()
-#define DBG_PIN		15	// IN  pull low to silence Log()
+#define APP_CPU_AFFINITY	1	// 0, 1 or tskNO_AFFINITY
 
-				// adc pins are 32-39
-#define VDD_PIN		32	// undef to disable
-#define VDD_DIVIDER	2	// 1m.1m
-#define VDD_ATTEN	6	// 6db
+// tskIDLE_PRIORITY + n
+// configMAX_PRIORITIES - n
+#define APP_TASK_PRIORITY	(tskIDLE_PRIORITY+5)
+#define APP_TASK_STACK		(4*1024)
 
-#define BAT_PIN		33	// undef to disable
-#define BAT_DIVIDER	3	// 1m.2m
-#define BAT_ATTEN	6	// 6db
+#define I2C_SCL			22	// i2c
+#define I2C_SDA			21	// i2c
+#define OUT_PIN			19	// OUT toggled to mark program steps
+#define OW_PIN			18	// IO  ow
+#define ERROR_PIN		17	// OUT indicate a failure (debug). -ve to disable
+#define TOGGLE_PIN		16	// IN  pull low to disable toggle()
+#define DBG_PIN			15	// IN  pull low to silence Log()
 
-#define V1_PIN		34	// undef to disable
-#define V1_DIVIDER	1	// resistor network
-#define V1_ATTEN	6	// 6db
+			// adc pins are 32-39
+#define VDD_PIN			32	// undef to disable
+#define VDD_DIVIDER		2	// 1m.1m
+#define VDD_ATTEN		6	// 6db
 
-#define READ_TSENS	1	// read esp32 temperature sensor
+#define BAT_PIN			33	// undef to disable
+#define BAT_DIVIDER		3	// 1m.2m
+#define BAT_ATTEN		6	// 6db
+
+#define V1_PIN			34	// undef to disable
+#define V1_DIVIDER		1	// resistor network
+#define V1_ATTEN		6	// 6db
+
+#define READ_TSENS		1	// read esp32 temperature sensor
 
 #if   62 == MY_HOST	// esp-32a
-#define READ_BME280	1	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define BAT_VOLTAGE	5.0
+#define READ_BME280		1	// enable if you have one connected
+#define READ_DS18B20		1	// enable if you have one connected
+#define BAT_VOLTAGE		5.0
 
 #elif 64 == MY_HOST	// esp-32b
-#define READ_BME280	0	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define BAT_VOLTAGE	3.3
+#define READ_BME280		0	// enable if you have one connected
+#define READ_DS18B20		1	// enable if you have one connected
+#define BAT_VOLTAGE		3.3
 #undef  V1_PIN
 
 #elif 65 == MY_HOST	// esp-32c
-#define READ_BME280	0	// enable if you have one connected
-#define READ_DS18B20	1	// enable if you have one connected
-#define BAT_VOLTAGE	3.3
+#define READ_BME280		0	// enable if you have one connected
+#define READ_DS18B20		1	// enable if you have one connected
+#define BAT_VOLTAGE		3.3
 #undef  V1_PIN
 
 #else
-#error unknown host MY_HOST
+#error unknown host		MY_HOST
 #endif
 
-#define READ_ADC	(defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
+#define READ_ADC		(defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
 
 #if READ_ADC
 #include "adc.h"
@@ -116,7 +123,7 @@
 
 #if OUT_PIN < 0
 #undef TOGGLE_PIN
-#define TOGGLE_PIN	-1
+#define TOGGLE_PIN		-1
 #endif
 
 #if READ_BME280
@@ -126,10 +133,10 @@ RTC_DATA_ATTR static int bme280_failures = 0;
 
 #if READ_DS18B20
 #include "ds18b20.h"
-  #define ROM_ID	NULL	// when only one ow device connected, fastest
-//#define ROM_ID	(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"	// esp-32a
-//#define ROM_ID	(uint8_t *)"\x28\xc5\x3e\x76\x06\x00\x00\x3c"	// esp-32b
-//#define ROM_ID	(uint8_t *)"\x28\xa9\x7f\x78\x06\x00\x00\xb3"	// esp-32c
+  #define ROM_ID		NULL	// when only one ow device connected, fastest
+//#define ROM_ID		(uint8_t *)"\x28\xdc\x01\x78\x06\x00\x00\x0f"	// esp-32a
+//#define ROM_ID		(uint8_t *)"\x28\xc5\x3e\x76\x06\x00\x00\x3c"	// esp-32b
+//#define ROM_ID		(uint8_t *)"\x28\xa9\x7f\x78\x06\x00\x00\xb3"	// esp-32c
 RTC_DATA_ATTR static int ds18b20_failures = 0;
 #endif
 
@@ -801,7 +808,7 @@ Log ("esp_wifi_set_mode(WIFI_MODE_STA)");
 				.ssid     = AP_SSID,
 				.password = AP_PASS,
 				.bssid_set = 0,
-				.channel = 11
+				.channel = 6
 			},
 		};
 Log ("esp_wifi_set_config(ESP_IF_WIFI_STA)");
@@ -908,6 +915,9 @@ void app_main ()
 // turn off internal messages below ERROR level
 	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
+	if (reset_reason != DEEPSLEEP_RESET)	// cold start
+		delay_ms (500);	// give 'screen' time to start
+
 	Log ("app built at %s %s", __DATE__, __TIME__);
 
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
@@ -921,8 +931,7 @@ void app_main ()
 
 // do we need a RTC_DATA_ATTR magic?
 
-	xTaskCreate(main_task, "udp", 10240, NULL, 20, NULL);
-//	xTaskCreatePinnedToCore(main_task, "udp", 10240, NULL, 20, NULL, 1);
-		// or use tskNO_AFFINITY
+	xTaskCreatePinnedToCore(main_task, "udp", APP_TASK_STACK, NULL,
+		APP_TASK_PRIORITY, NULL, APP_CPU_AFFINITY);
 }
 
