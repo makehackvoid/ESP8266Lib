@@ -56,7 +56,7 @@
 #define MY_NAME			"test"
 #endif
 
-#define SLEEP_S			 5	// seconds
+#define SLEEP_S			300	// 5m in  seconds
 #define WIFI_GRACE_MS		50	// time to wait before deep sleep to drain wifi tx
 #define WIFI_TIMEOUT_MS		5000	// time to wait for WiFi connection
 #define WIFI_DISCONNECT_MS	100	// time to wait for WiFi disconnection
@@ -69,7 +69,7 @@
 // tskIDLE_PRIORITY + n
 // configMAX_PRIORITIES - n
 #define APP_TASK_PRIORITY	(tskIDLE_PRIORITY+5)
-#define APP_TASK_STACK		(4*1024)
+#define APP_TASK_STACK		(8*1024)
 
 #define I2C_SCL			22	// i2c
 #define I2C_SDA			21	// i2c
@@ -159,12 +159,13 @@ RTC_DATA_ATTR static uint64_t timeLast = 0;
 RTC_DATA_ATTR static uint64_t timeTotal = 0;
 
 static int do_toggle = 0;
+static struct timeval app_start;
 static uint64_t app_start_us = 0;
 static uint64_t app_start_ticks = 0;
-static uint64_t time_wifi_us = 0;
-static struct timeval app_start;
 static int wakeup_cause;
 static int reset_reason;
+static bool woke_up = 0;
+static uint64_t time_wifi_us = 0;
 static int rssi = 0;
 static int sent = 0;
 static int retry_count = 0;
@@ -195,23 +196,6 @@ void flush_uart (void)
 	fflush(stdout);
 	uart_tx_wait_idle(CONFIG_CONSOLE_UART_NUM);
 }
-
-static uint8_t getChipRevision (void)
-{
-	return (REG_READ (EFUSE_BLK0_RDATA3_REG)>>EFUSE_RD_CHIP_VER_RESERVE_S)&&EFUSE_RD_CHIP_VER_RESERVE_V;
-}
-
-#if 000
-// does not work
-static uint64_t getChipMAC (void)
-{
-	uint64_t mac = 
- (REG_READ (EFUSE_BLK0_RDATA2_REG)>>EFUSE_RD_WIFI_MAC_CRC_HIGH_S)&&EFUSE_RD_WIFI_MAC_CRC_HIGH_V;
-	mac = (mac << 32) |
-((REG_READ (EFUSE_BLK0_RDATA1_REG)>>EFUSE_RD_WIFI_MAC_CRC_LOW_S) &&EFUSE_RD_WIFI_MAC_CRC_LOW_V);
-	return mac;
-}
-#endif
 
 static void toggle_setup (void)
 {
@@ -278,9 +262,11 @@ void get_time_tv (struct timeval *now)
 	now->tv_usec -= app_start.tv_usec;
 }
 
+#if 000	// not used
 static uint64_t get_time_us (void) {
 	return gettimeofday_us() - app_start_us;
 }
+#endif
 
 #if READ_DS18B20
 static esp_err_t ds18b20_temp (float *temp)
@@ -294,7 +280,7 @@ static esp_err_t ds18b20_temp (float *temp)
 
 	DbgR (ds18b20_init (OW_PIN, ROM_ID));
 
-	if (reset_reason != DEEPSLEEP_RESET) {	// cold start
+	if (!woke_up) {
 		DbgR (ds18b20_read_id (id));
 		Log("ROM id: %02x %02x %02x %02x %02x %02x %02x %02x",
 			id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
@@ -303,7 +289,7 @@ static esp_err_t ds18b20_temp (float *temp)
 	}
 	Dbg (ds18b20_read_temp (temp));
 	if (ESP_OK == rval) rval = ret;
-	if (reset_reason == DEEPSLEEP_RESET) {	// deep sleep wakeup
+	if (woke_up) {
 		Dbg (ds18b20_convert (0));
 		if (ESP_OK == rval) rval = ret;
 	}
@@ -371,7 +357,7 @@ static esp_err_t do_readings (void)
 	float qfe, h, qnh;
 	int fail;
 
-	DbgRval (bme280_init(I2C_SDA, I2C_SCL, reset_reason != DEEPSLEEP_RESET));
+	DbgRval (bme280_init(I2C_SDA, I2C_SCL, !woke_up));
 
 	DbgRval (bme280_read (622, &temp, &qfe, &h, &qnh));
 	if (ret != ESP_OK || temp >= BAD_TEMP) {
@@ -401,17 +387,20 @@ static esp_err_t do_readings (void)
 
 #ifdef VDD_PIN
 	DbgRval (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
+	DbgRval (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
 #else
 	vdd = 3.3;
 #endif
 
 #ifdef BAT_PIN
 	DbgRval (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
+	DbgRval (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
 #else
 	bat = BAT_VOLTAGE;
 #endif
 
 #ifdef V1_PIN
+	DbgRval (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
 	DbgRval (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
 #else
 	v1 = 0;
@@ -466,16 +455,17 @@ typedef enum {
 
 static int format_message (char *message, int mlen)
 {
-	struct timeval now;
-	uint64_t sleep_us;
-	uint64_t sleep_ticks;
-	float cycle_s;
 	char *buf = message;
 	int blen = mlen;
 	int len;
+	uint64_t sleep_us;
+	uint64_t sleep_ticks;
+	struct timeval now;
+	float cycle_s;		// prev cycle  time
+	float cycle_a;		// prev active time
 	int i;
 
-	sleep_us = (sleep_start_us > 0) ? app_start_us - sleep_start_us : 0;
+	sleep_us    = (sleep_start_us > 0)    ? app_start_us    - sleep_start_us    : 0;
 	sleep_ticks = (sleep_start_ticks > 0) ? app_start_ticks - sleep_start_ticks : 0;
 
 //Log("sleep_start=%lld app_start=%lld sleep_time=%lld",
@@ -503,14 +493,18 @@ static int format_message (char *message, int mlen)
 		blen -= len;
 	}
 
-	cycle_s = (app_start_us - prev_app_start_us) / 1000000.;
+	if (woke_up) {
+		cycle_s = (app_start_us - prev_app_start_us) / 1000000.;
+		cycle_a = cycle_s - SLEEP_S;
+	} else
+		cycle_s = cycle_a = 0;
 
 	len = snprintf (buf, blen,
 		" prev=L%.3f,T%d,c%.6f,a%.6f",
 		timeLast / 1000000.,
 		(uint32_t)(timeTotal / 1000000),
-		cycle_s,		// last cycle  time
-		cycle_s - SLEEP_S);	// last active time
+		cycle_s,
+		cycle_a);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -519,15 +513,18 @@ static int format_message (char *message, int mlen)
     {
 	uint64_t system_get_rtc_time(void);
 	uint64_t get_time_since_boot_us(void);
+	uint32_t _cal_get (void);
 
-	uint64_t ticks = rtc_time_get();		// RTC time (raw)
-	uint64_t RTC   = system_get_rtc_time();		// RTC time (adjusted)
-	uint64_t FRCr  = get_time_since_boot_us();	// FRC (raw)
-	uint64_t FRC   = gettimeofday_us();		// FRC (adjusted)
+	uint64_t RTC   = system_get_rtc_time();		// R RTC time (adjusted ticks)
+		// RTC = ticks * tCal / 2^19
+	uint64_t FRC   = gettimeofday_us();		// F FRC (adjusted)
+	uint64_t FRCr  = get_time_since_boot_us();	// f FRC (raw)
+	uint32_t tCal = _cal_get();			// C esp_clk_slowclk_cal_get()
+	uint64_t ticks = rtc_time_get();		// t RTC time (raw ticks, 150mHz)
 
 	len = snprintf (buf, blen,
-		" clocks=R%llu,F%llu,f%llu,t%llu,g%d",
-		RTC, FRC, FRCr, ticks, lastGrace);
+		" clocks=R%llu,F%llu,f%llu,C%u,t%llu,g%d",
+		RTC, FRC, FRCr, tCal, ticks, lastGrace);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -796,7 +793,7 @@ Log ("esp_event_loop_init");
 Log ("esp_wifi_init");
 	DbgR (esp_wifi_init(&cfg));
 
-	if (reset_reason != DEEPSLEEP_RESET) {	// this should be saved in flash
+	if (!woke_up) {	// otherwise this was saved in flash
 Log ("esp_wifi_set_storage(WIFI_STORAGE_FLASH)");
 		DbgR (esp_wifi_set_storage(WIFI_STORAGE_FLASH));
 
@@ -915,7 +912,11 @@ void app_main ()
 // turn off internal messages below ERROR level
 	if (!do_log) esp_log_level_set("*", ESP_LOG_ERROR);
 
-	if (reset_reason != DEEPSLEEP_RESET)	// cold start
+	wakeup_cause = rtc_get_wakeup_cause();
+	reset_reason = rtc_get_reset_reason(0);
+	woke_up = reset_reason == DEEPSLEEP_RESET;
+
+	if (do_log && !woke_up)	// cold start
 		delay_ms (500);	// give 'screen' time to start
 
 	Log ("app built at %s %s", __DATE__, __TIME__);
@@ -923,11 +924,20 @@ void app_main ()
 //Log ("app_main start portTICK_PERIOD_MS=%d sizeof(int)=%d sizeof(long)=%d",
 //	portTICK_PERIOD_MS, sizeof(int), sizeof(long));
 
-//	Log ("Chip revision %d MAC %012llx", getChipRevision(), getChipMAC());
-	Log ("Chip revision %d", getChipRevision());
+// See components/esp32/include/esp_system.h for
+{
+	uint8_t mac[6];
+	esp_chip_info_t chip_info;
 
-	wakeup_cause = rtc_get_wakeup_cause();
-	reset_reason = rtc_get_reset_reason(0);
+	esp_chip_info(&chip_info);
+	Log ("Chip model %d, revision %d, #cores %d",
+		chip_info.model, chip_info.revision, chip_info.cores);
+
+	esp_efuse_mac_get_default(mac);
+	Log ("MAC %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+	Log ("IDF verion '%s'", esp_get_idf_version());
+}
 
 // do we need a RTC_DATA_ATTR magic?
 
