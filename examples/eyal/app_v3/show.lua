@@ -1,4 +1,5 @@
 local gpio4 = 2
+local gpio5 = 1
 
 local function show_esp()
 	print("flashsize "..node.flashsize())
