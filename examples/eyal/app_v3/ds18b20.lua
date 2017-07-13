@@ -154,7 +154,7 @@ function read(addr, unit)
 	local t = data:byte(1) + data:byte(2) * 256
 	if (65535 == t) then return nil end	-- 0xffff
 	if (t > 32767) then			-- 0x7fff
-		t = t - 65536			-- 0x8000
+		t = t - 65536			-- 0x10000
 	end
 	t = t*frac
 	if (nil == unit or C == unit) then
