@@ -14,6 +14,7 @@ local function no_ow()
 end
 
 local function read_ds18b20()
+----	--- save memory ---
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -69,9 +70,12 @@ local good = 0
 	end
 Trace(6+good)
 	return true
+--- save memory --- --]]
+--	return false
 end
 
 local function read_bme280()
+----	--- save memory ---
 	out_bleep()
 	local speed = i2c.setup(0, i2c_SDA, i2c_SCL, i2c.SLOW)
 	if 0 == speed then
@@ -125,9 +129,12 @@ local function read_bme280()
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 	return true
+--- save memory --- --]]
+--	return false
 end
 
 local function read_ds3231()
+----	--- save memory ---
 	if print_dofile then Log("calling ds3231") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -154,6 +161,8 @@ local function read_ds3231()
 	ds3231, package.loaded["ds3231"] = nil, nil
 
 	return ret
+--- save memory --- --]]
+--	return false
 end
 
 local function have_pin(pin, pin_name, device_name)
