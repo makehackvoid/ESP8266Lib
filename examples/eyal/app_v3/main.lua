@@ -183,6 +183,11 @@ local function domain()
 		return false
 	end
 
+	if adc_en_pin and adc_en_pin > 0 then
+		gpio.mode (adc_en_pin, gpio.OUTPUT)
+		gpio.write(adc_en_pin, gpio.LOW)
+	end
+
 -- do we want to actually print messages?
 	if nil == print_log    then print_log    = false end
 	if nil == print_stats  then print_stats  = false end	-- memory usage
