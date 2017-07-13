@@ -117,7 +117,15 @@ reason = ri.reason;
 
 	local vbat, vdd33
 	if adc_factor then	-- cannot read vdd with adc anymore
-		vbat = adc.read(0)*adc_factor
+		if adc_en_pin > 0 then
+Log ("reading adc")
+			gpio.write(adc_en_pin, gpio.HIGH)
+			tmr.delay(1000)	-- 1ms
+			vbat = adc.read(0)*adc_factor
+			gpio.write(adc_en_pin, gpio.LOW)
+		else
+			vbat = adc.read(0)*adc_factor
+		end
 		vdd33 = rtcmem.read32(rtca_vddLastRead)
 	else
 		vbat = 0			-- dummy
