@@ -9,18 +9,18 @@
 
 #include "udp.h"
 #include "adc.h"
+#include "esp_adc_cal.h"
 
 #include <driver/adc.h>
 
 #define ADC_ATTEN	ADC_ATTEN_6db
 #define ADC_ATTEN_RATIO	(4095. / 2)
 
-static int adc_range = 4096-1;
+static adc_atten_t adc_width = ADC_WIDTH_12Bit;
+static int adc_vref = 1199;
 
-esp_err_t adc_init (int width)
+esp_err_t adc_init (int width, int vref)
 {
-	adc_atten_t adc_width;
-
 	switch (width) {
 	case  9:
 		adc_width = ADC_WIDTH_9Bit;
@@ -35,11 +35,13 @@ esp_err_t adc_init (int width)
 		adc_width = ADC_WIDTH_12Bit;
 		break;
 	default:
-		return ESP_FAIL;
+		LogR (ESP_FAIL, "bad ADC width %d", width);
+		break;
 	}
 
 	DbgR (adc1_config_width(adc_width));
-	adc_range = (1<<width) - 1;
+
+	adc_vref = vref;
 
 	return ESP_OK;
 }
@@ -48,7 +50,6 @@ esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 {
 	adc1_channel_t channel;
 	adc_atten_t adc_atten;
-	float ratio;
 
 	*adc = 0.0;
 
@@ -78,32 +79,32 @@ esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 		channel = ADC1_CHANNEL_7;
 		break;
 	default:
-		return ESP_FAIL;
+		LogR (ESP_FAIL, "bad ADC pin %d", pin);
+		break;
 	}
 
 	switch (atten) {
 	case 0:
 		adc_atten = ADC_ATTEN_0db;
-		ratio = adc_range / 1. / divider;
 		break;
 	case 2:
 		adc_atten = ADC_ATTEN_2_5db;
-		ratio = adc_range / 1.34 / divider;
 		break;
 	case 6:
 		adc_atten = ADC_ATTEN_6db;
-		ratio = adc_range / 2. / divider;
 		break;
 	case 11:
 		adc_atten = ADC_ATTEN_11db;
-		ratio = adc_range / 3.6 / divider;
 		break;
 	default:
-		return ESP_FAIL;
+		LogR (ESP_FAIL, "bad ADC atten %d", atten);
+		break;
 	}
 
 	DbgR (adc1_config_channel_atten(channel, adc_atten));
-	*adc = adc1_get_voltage(channel) / ratio;
+	esp_adc_cal_characteristics_t cal;
+	esp_adc_cal_get_characteristics(adc_vref, adc_atten, adc_width, &cal);
+	*adc = adc1_to_voltage(channel, &cal) / 1000. * divider;
 
 	return ESP_OK;
 }

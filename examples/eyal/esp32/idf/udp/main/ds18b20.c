@@ -77,11 +77,9 @@ static esp_err_t ds18b20_read_scratchpad(uint8_t *scratchpad)
 	DbgR (ds18b20_send_command (DS18B20_READ_SCRATCHPAD));
 	DbgR (ow_read_bytes (9, scratchpad));
 
-	if (scratchpad[8] != (crc = onewire_crc8(scratchpad, 8))) {
-		Log ("### %s:%d: bad scratchpad crc %02x, read %02x",
-			__FILE__, __LINE__, crc, scratchpad[8]);
-		return ESP_FAIL;
-	}
+	if (scratchpad[8] != (crc = onewire_crc8(scratchpad, 8)))
+		LogR (ESP_FAIL, "bad scratchpad crc %02x, read %02x",
+			crc, scratchpad[8]);
 
 	return ESP_OK;
 }
@@ -96,8 +94,7 @@ esp_err_t ds18b20_read_temp(float *temp)
 	t = ((int16_t)scratchpad[1]<<8) | scratchpad[0];
 	if (85*16 == t || 0x07ff == t) {	// common bad readings
 		*temp = BAD_TEMP + .01;
-		Log ("### %s:%d: bad temp %.4f 0x%04x", __FILE__, __LINE__, t/16., t);
-		return ESP_FAIL;
+		LogR (ESP_FAIL, "bad temp %.4f 0x%04x", t/16., t);
 	}
 	*temp = t / 16.0;
 
@@ -140,11 +137,9 @@ esp_err_t ds18b20_read_id (uint8_t *id)
 
 	DbgR (ds18b20_send_command (DS18B20_READ_ROM));
 	DbgR (ow_read_bytes (8, id));
-	if (id[7] != (crc = onewire_crc8(id, 7))) {
-		Log ("### %s:%d: bad id crc %02x, read %02x",
-			__FILE__, __LINE__, crc, id[7]);
-		return ESP_FAIL;
-	}
+	if (id[7] != (crc = onewire_crc8(id, 7)))
+		LogR (ESP_FAIL, "bad id crc %02x, read %02x",
+			crc, id[7]);
 
 	return ESP_OK;
 }
@@ -154,16 +149,11 @@ esp_err_t ds18b20_init (uint8_t pin, uint8_t *id)
 	DbgR (ow_init (pin));
 
 	if (NULL != id) {
-		if (id[7] != onewire_crc8(id, 7)) {
-			Log ("### %s:%d: bad id, crc check failed",
-				__FILE__, __LINE__);
-			return ESP_FAIL;
-		}
-		if (id[0] != DS18B20_DEVICE_ID) {	// not a ds18b20
-			Log ("### %s:%d: device type %02x not a ds18b20 (%02x)",
-				__FILE__, __LINE__, id[0], DS18B20_DEVICE_ID);
-			return ESP_FAIL;
-		}
+		if (id[7] != onewire_crc8(id, 7))
+			LogR (ESP_FAIL, "bad id, crc check failed");
+		if (id[0] != DS18B20_DEVICE_ID)	// not a ds18b20
+			LogR (ESP_FAIL, "device type %02x not a ds18b20 (%02x)",
+				id[0], DS18B20_DEVICE_ID);
 		memcpy (rom_id, id, 8);
 	}
 

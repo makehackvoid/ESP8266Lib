@@ -143,10 +143,12 @@ toggle_short(1);
 	OW_GO_INPUT ();
 	delay_us(70);	// measured: low in 30us, high in 140us
 toggle_short(1);
-	if (gpio_get_level(ow_pin)) return ESP_FAIL;
+	if (gpio_get_level(ow_pin))
+		LogR (ESP_FAIL, "reset timeout 1");
 	delay_us(410);
 toggle_short(1);
-//	if (!gpio_get_level(ow_pin)) return ESP_FAIL;	// TESTING
+//	if (!gpio_get_level(ow_pin))	// TESTING
+//		LogR (ESP_FAIL, "reset timeout 2");
 
 	return ESP_OK;
 }
@@ -163,7 +165,8 @@ esp_err_t ow_depower (void)
 static esp_err_t ow_wait_for_high (int us)
 {
 	for (; !gpio_get_level (ow_pin); --us) {
-		if (us <= 0) return ESP_FAIL;
+		if (us <= 0)
+			LogR (ESP_FAIL, "wait_for_high timeout");
 		delay_us(1);
 	}
 

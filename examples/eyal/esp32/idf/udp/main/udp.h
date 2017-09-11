@@ -6,6 +6,8 @@
 #include <sys/time.h>
 #include <esp_system.h>
 #include <esp_err.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/event_groups.h>
 
 #define BAD_TEMP	85
 
@@ -14,8 +16,9 @@ void flush_uart (void);
 void toggle(int ntimes);
 void toggle_short(int ntimes);
 void get_time_tv (struct timeval *now);
-
+uint64_t gettimeofday_us(void);
 int do_log;
+bool woke_up;
 
 #define LOG_FLUSH	1	// 1= flush uart after each Log message
 #define LOG_ERRORS	1	// 1= always log errors
@@ -48,13 +51,18 @@ do { \
 		Log  ("### %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
 } while (0)
 
+#define LogR(ret,fmt,...) \
+do { \
+	MarkE (fmt, ##__VA_ARGS__); \
+	return (ret); \
+} while (0)
+
 #define Dbg(f) \
 do { \
 	ret = (f); \
 	if (ESP_OK != ret) \
 		MarkE ("ret=%d %s", ret, #f); \
 } while (0)
-
 
 #define DbgR(f) \
 do { \

@@ -8,55 +8,20 @@
 */
 
 #include "udp.h"
+#include "wifi.h"
 
-#include <sys/socket.h>
 #include <esp_log.h>
-#include <esp_wifi.h>
-#include <freertos/event_groups.h>
-#include <esp_event_loop.h>	// esp_event_loop_init()
 #include <rom/rtc.h>
 #include <rom/uart.h>		// uart_tx_wait_idle()
 #include <driver/timer.h>	// timer_get_counter_time_sec()
 #include <soc/efuse_reg.h>	// needed by getChip*()
-#include <nvs_flash.h>
-
-// best to provide in CFLAGS: AP_SSID AP_PASS MY_IP MY_NAME
-#ifndef AP_SSID
-#error undefined AP_SSID
-#endif
-
-#ifndef AP_PASS
-#error undefined AP_SSID
-#endif
-
-#ifndef SVR_IP
-#define SVR_IP			"192.168.2.7"	// server IP
-#endif
-
-#ifndef SVR_PORT
-#define SVR_PORT		21883		// server port
-#endif
-
-#ifdef MY_IP				// client IP
-
-#ifndef MY_NM
-#define MY_NM			"255.255.255.0"	// netmask
-#endif
-
-#ifndef MY_GW
-#define MY_GW			SVR_IP		// gateway
-#endif
-
-#define USE_DHCPC		0		// use static IP
-#else // ifdef MY_IP
-#define USE_DHCPC		1		// use dhcp
-#endif // ifndef MY_IP
 
 #ifndef MY_NAME
 #define MY_NAME			"test"
 #endif
 
-#define SLEEP_S			300	// 5m in  seconds
+#define WAKEUP_MS		160	// ms from power up to app_main
+#define SLEEP_S			60	// seconds
 #define WIFI_GRACE_MS		50	// time to wait before deep sleep to drain wifi tx
 #define WIFI_TIMEOUT_MS		5000	// time to wait for WiFi connection
 #define WIFI_DISCONNECT_MS	100	// time to wait for WiFi disconnection
@@ -98,21 +63,36 @@
 #define READ_BME280		1	// enable if you have one connected
 #define READ_DS18B20		1	// enable if you have one connected
 #define BAT_VOLTAGE		5.0
+#undef  V1_PIN
+#define ADC_VREF		1130	// measured
+#undef SLEEP_S
+#define SLEEP_S			(10*60)	// 10m in seconds
+#define ACTION			"store"
 
 #elif 64 == MY_HOST	// esp-32b
 #define READ_BME280		0	// enable if you have one connected
 #define READ_DS18B20		1	// enable if you have one connected
 #define BAT_VOLTAGE		3.3
 #undef  V1_PIN
+#define ADC_VREF		1094	// measured when Vdd=3.313v
+#undef VDD_DIVIDER
+#define VDD_DIVIDER		(2*1.016)
+#undef SLEEP_S
+#define SLEEP_S			(1*60)	// 1m in seconds
+#define ACTION			"store"
 
 #elif 65 == MY_HOST	// esp-32c
 #define READ_BME280		0	// enable if you have one connected
 #define READ_DS18B20		1	// enable if you have one connected
 #define BAT_VOLTAGE		3.3
 #undef  V1_PIN
+#define ADC_VREF		1113	// measured when Vdd=3.272v
+#undef SLEEP_S
+#define SLEEP_S			(5*60)	// 5m in seconds
+#define ACTION			"store"
 
 #else
-#error unknown host		MY_HOST
+#error unknown host MY_HOST
 #endif
 
 #define READ_ADC		(defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
@@ -145,10 +125,18 @@ RTC_DATA_ATTR static int ds18b20_failures = 0;
 #endif
 
 int do_log = 1;
+uint64_t time_wifi_us = 0;
+int rssi = 0;
+int channel = 0;
+int sent = 0;
+int retry_count = 0;
+bool woke_up = 0;
+
 
 RTC_DATA_ATTR static int runCount = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_ticks = 0;
+RTC_DATA_ATTR static uint64_t sleep_length_us = 0;
 RTC_DATA_ATTR static uint64_t prev_app_start_us = 0;
 RTC_DATA_ATTR static int failSoft = 0;
 RTC_DATA_ATTR static int failHard = 0;
@@ -164,15 +152,6 @@ static uint64_t app_start_us = 0;
 static uint64_t app_start_ticks = 0;
 static int wakeup_cause;
 static int reset_reason;
-static bool woke_up = 0;
-static uint64_t time_wifi_us = 0;
-static int rssi = 0;
-static int sent = 0;
-static int retry_count = 0;
-
-static EventGroupHandle_t event_group;
-const int HAVE_WIFI = BIT0;
-const int NO_WIFI = BIT1;
 
 // The following functions are missing a prototype.
 uint64_t rtc_time_get(void);		// raw RTC time in ticks
@@ -282,17 +261,16 @@ static esp_err_t ds18b20_temp (float *temp)
 
 	if (!woke_up) {
 		DbgR (ds18b20_read_id (id));
-		Log("ROM id: %02x %02x %02x %02x %02x %02x %02x %02x",
+		Log("ds18b20 ROM id: %02x %02x %02x %02x %02x %02x %02x %02x",
 			id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
 
 		DbgR (ds18b20_convert (1));
 	}
 	Dbg (ds18b20_read_temp (temp));
 	if (ESP_OK == rval) rval = ret;
-	if (woke_up) {
-		Dbg (ds18b20_convert (0));
-		if (ESP_OK == rval) rval = ret;
-	}
+
+	Dbg (ds18b20_convert (0));
+	if (ESP_OK == rval) rval = ret;
 
 	Dbg (ds18b20_depower ());
 	if (ESP_OK == rval) rval = ret;
@@ -308,7 +286,6 @@ static float bat, vdd, v1;
 static char weather[40] = "";
 static float ds18b20_failure_reason = 0;
 static uint64_t time_readings_us = 0;
-static int tsens;
 
 // save first failure in 'rval'
 //
@@ -318,11 +295,75 @@ do { \
 	if (ESP_OK == rval) rval = ret; \
 } while (0)
 
-static esp_err_t do_readings (void)
+static esp_err_t read_temps (void)
 {
 	esp_err_t ret;
 	esp_err_t rval;		// return first failure
 	float temp;
+
+	rval = ESP_OK;
+
+#if READ_DS18B20
+	if (ntemps < MAX_TEMPS) {
+		DbgRval (ds18b20_temp (&temp));
+		if (ret != ESP_OK || temp >= BAD_TEMP) {
+			toggle_error();		// tell DSO
+			++ds18b20_failures;
+			ds18b20_failure_reason = temp;
+			DbgRval (ds18b20_temp (&temp));	// one retry
+			if (ret != ESP_OK || temp >= BAD_TEMP) {
+				toggle_error();		// tell DSO
+				++failReadHard;
+				temp = BAD_TEMP;
+			} else
+				++failRead;
+		}
+		temps[ntemps++] = temp;
+	}
+#endif // READ_DS18B20
+
+#if READ_TSENS
+	if (ntemps < MAX_TEMPS) {
+		int tsens;
+
+		DbgRval (tsens_read (&tsens));
+		temps[ntemps++] = tsens;
+	}
+#endif
+
+#if READ_BME280
+	{
+		float qfe, h, qnh;
+		int fail;
+
+		DbgRval (bme280_init(I2C_SDA, I2C_SCL, !woke_up));
+
+		DbgRval (bme280_read (622, &temp, &qfe, &h, &qnh));
+		if (ret != ESP_OK || temp >= BAD_TEMP) {
+			toggle_error();		// tell DSO
+			++failRead;
+			++bme280_failures;
+		}
+
+		fail = 0;
+		if (       BAD_TEMP <= temp) fail |= 0x01;
+		if (BME280_BAD_QFE  == qfe)  fail |= 0x02;
+		if (BME280_BAD_HUMI == h)    fail |= 0x04;
+
+		snprintf (weather, sizeof(weather),
+			" w=T%.2f,P%.3f,H%.3f,f%x",
+			temp, qnh, h, fail);
+		if (ntemps < MAX_TEMPS) temps[ntemps++] = temp;
+	}
+#endif // READ_BME280
+
+	return rval;
+}
+
+static esp_err_t do_readings (void)
+{
+	esp_err_t ret;
+	esp_err_t rval;		// return first failure
 
 	flush_uart ();		// avoid uart interruptions
 
@@ -330,63 +371,17 @@ static esp_err_t do_readings (void)
 	ntemps = 0;
 	rval = ESP_OK;
 
-#if READ_DS18B20
-	DbgRval (ds18b20_temp (&temp));
-	if (ret != ESP_OK || temp >= BAD_TEMP) {
-		toggle_error();		// tell DSO
-		++ds18b20_failures;
-		ds18b20_failure_reason = temp;
-		DbgRval (ds18b20_temp (&temp));	// one retry
-		if (ret != ESP_OK || temp >= BAD_TEMP) {
-			toggle_error();		// tell DSO
-			++failReadHard;
-			temp = BAD_TEMP;
-		} else
-			++failRead;
-	}
-	if (ntemps < MAX_TEMPS) temps[ntemps++] = temp;
-#endif // READ_DS18B20
+	DbgRval (read_temps ());
 
-#if READ_TSENS
-	DbgRval (tsens_read (&tsens));
-	if (ntemps < MAX_TEMPS) temps[ntemps++] = tsens;
-#endif
-
-#if READ_BME280
-{
-	float qfe, h, qnh;
-	int fail;
-
-	DbgRval (bme280_init(I2C_SDA, I2C_SCL, !woke_up));
-
-	DbgRval (bme280_read (622, &temp, &qfe, &h, &qnh));
-	if (ret != ESP_OK || temp >= BAD_TEMP) {
-		toggle_error();		// tell DSO
-		++failRead;
-		++bme280_failures;
-	}
-
-	fail = 0;
-	if (       BAD_TEMP <= temp) fail |= 0x01;
-	if (BME280_BAD_QFE  == qfe)  fail |= 0x02;
-	if (BME280_BAD_HUMI == h)    fail |= 0x04;
-
-	snprintf (weather, sizeof(weather),
-		" w=T%.2f,P%.3f,H%.3f,f%x",
-		temp, qnh, h, fail);
-	if (ntemps < MAX_TEMPS) temps[ntemps++] = temp;
-}
-#endif // READ_BME280
 
 	if (0 == ntemps)
 		if (ntemps < MAX_TEMPS) temps[ntemps++] = 0;
 
 #if READ_ADC
-	DbgRval (adc_init (12));
+	DbgRval (adc_init (12, ADC_VREF));
 #endif
 
 #ifdef VDD_PIN
-	DbgRval (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
 	DbgRval (adc_read (&vdd, VDD_PIN, VDD_ATTEN, VDD_DIVIDER));
 #else
 	vdd = 3.3;
@@ -394,13 +389,11 @@ static esp_err_t do_readings (void)
 
 #ifdef BAT_PIN
 	DbgRval (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
-	DbgRval (adc_read (&bat, BAT_PIN, BAT_ATTEN, BAT_DIVIDER));
 #else
 	bat = BAT_VOLTAGE;
 #endif
 
 #ifdef V1_PIN
-	DbgRval (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
 	DbgRval (adc_read (&v1, V1_PIN, V1_ATTEN, V1_DIVIDER));
 #else
 	v1 = 0;
@@ -461,8 +454,8 @@ static int format_message (char *message, int mlen)
 	uint64_t sleep_us;
 	uint64_t sleep_ticks;
 	struct timeval now;
-	float cycle_s;		// prev cycle  time
-	float cycle_a;		// prev active time
+	uint64_t cycle_us;		// prev cycle  time
+	uint64_t active_us;		// prev active time
 	int i;
 
 	sleep_us    = (sleep_start_us > 0)    ? app_start_us    - sleep_start_us    : 0;
@@ -472,8 +465,8 @@ static int format_message (char *message, int mlen)
 //	sleep_start_us, app_start_us, sleep_us);
 
 	len = snprintf (buf, blen,
-		"show %s %d",
-		MY_NAME, runCount);
+		"%s %s %d",
+		ACTION, MY_NAME, runCount);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -494,17 +487,17 @@ static int format_message (char *message, int mlen)
 	}
 
 	if (woke_up) {
-		cycle_s = (app_start_us - prev_app_start_us) / 1000000.;
-		cycle_a = cycle_s - SLEEP_S;
+		cycle_us = app_start_us - prev_app_start_us;
+		active_us = cycle_us - sleep_length_us;
 	} else
-		cycle_s = cycle_a = 0;
+		cycle_us = active_us = 0;
 
 	len = snprintf (buf, blen,
 		" prev=L%.3f,T%d,c%.6f,a%.6f",
 		timeLast / 1000000.,
 		(uint32_t)(timeTotal / 1000000),
-		cycle_s,
-		cycle_a);
+		cycle_us  / 1000000.,
+		active_us / 1000000.);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -513,13 +506,13 @@ static int format_message (char *message, int mlen)
     {
 	uint64_t system_get_rtc_time(void);
 	uint64_t get_time_since_boot_us(void);
-	uint32_t _cal_get (void);
+	uint32_t esp_clk_slowclk_cal_get (void);
 
 	uint64_t RTC   = system_get_rtc_time();		// R RTC time (adjusted ticks)
 		// RTC = ticks * tCal / 2^19
 	uint64_t FRC   = gettimeofday_us();		// F FRC (adjusted)
 	uint64_t FRCr  = get_time_since_boot_us();	// f FRC (raw)
-	uint32_t tCal = _cal_get();			// C esp_clk_slowclk_cal_get()
+	uint32_t tCal = esp_clk_slowclk_cal_get();	// C slow_cal
 	uint64_t ticks = rtc_time_get();		// t RTC time (raw ticks, 150mHz)
 
 	len = snprintf (buf, blen,
@@ -594,8 +587,8 @@ static int format_message (char *message, int mlen)
 	}
 
 	len = snprintf (buf, blen,
-		" radio=s%d",
-		-rssi);
+		" radio=s%d,c%d",
+		-rssi, channel);
 	if (len > 0) {
 		buf += len;
 		blen -= len;
@@ -634,25 +627,7 @@ static int format_message (char *message, int mlen)
 		LogF ("%s", message);
 #endif
 
-	++runCount;
-
 	return mlen - blen;
-}
-
-static void send_message (char * message, int mlen)
-{
-	int mysocket;
-	struct sockaddr_in remote_addr;
-
-	mysocket = socket(AF_INET, SOCK_DGRAM, 0);
-	remote_addr.sin_family = AF_INET;
-	remote_addr.sin_port = htons(SVR_PORT);
-	remote_addr.sin_addr.s_addr = inet_addr(SVR_IP);
-
-Log ("sending '%s'", message);
-	toggle(2);
-	sendto(mysocket, message, mlen, 0,
-		(struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
 
 static void do_grace (void)
@@ -671,6 +646,8 @@ Log ("delay %dms", WIFI_GRACE_MS);
 
 static void finish (void)
 {
+	++runCount;
+
 	if (retry_count > 1)
 		++failHard;
 	else if (retry_count > 0)
@@ -680,8 +657,7 @@ static void finish (void)
 		do_grace ();
 
 #if DISCONNECT
-Log ("esp_wifi_disconnect");
-	DbgR (esp_wifi_disconnect());
+	DbgR (esp_disconnect());
 
 Log ("xEventGroupWaitBits(NO_WIFI)");
 	xEventGroupWaitBits(event_group, NO_WIFI,
@@ -699,133 +675,15 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 	prev_app_start_us = app_start_us;
 	timeLast = sleep_start_us - app_start_us;
 	timeTotal += timeLast;
-	esp_deep_sleep(SLEEP_S*1000000);
-
-	vTaskDelete(NULL);
-}
-
-static esp_err_t set_ip (void)
-{
-#if !USE_DHCPC
-Log ("tcpip_adapter_dhcpc_stop");
-	DbgR (tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
-
-Log ("tcpip_adapter_set_ip_info");
-	tcpip_adapter_ip_info_t ip_info_new;
-	memset (&ip_info_new, 0, sizeof(ip_info_new));
-	ip4addr_aton(MY_IP, &ip_info_new.ip);
-	ip4addr_aton(MY_NM, &ip_info_new.netmask);
-	ip4addr_aton(MY_GW, &ip_info_new.gw);
-	DbgR (tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info_new));
-#endif	/* if !USE_DHCPC */
-
-	return ESP_OK;
-}
-
-static esp_err_t event_handler (void *ctx, system_event_t *event)
-{
-Log("event_handler: SYSTEM_EVENT %d", event->event_id);
-	switch(event->event_id) {
-	case SYSTEM_EVENT_STA_START:
-		toggle(1);
-Log ("SYSTEM_EVENT_STA_START");
-		break;
-	case SYSTEM_EVENT_STA_CONNECTED:
-		toggle(1);
-		time_wifi_us = gettimeofday_us() - time_wifi_us;
-{
-		wifi_ap_record_t wifidata;
-		DbgR (esp_wifi_sta_get_ap_info(&wifidata));
-		rssi = wifidata.rssi;
-Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d", rssi);
-}
-		break;
-	case SYSTEM_EVENT_STA_GOT_IP:
-		toggle(1);
-{
-char ip[16], nm[16], gw[16];
-Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.ip, ip, sizeof(ip)),
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.netmask, nm, sizeof(nm)),
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.gw, gw, sizeof(gw)));
-}
-Log("xEventGroupSetBits");
-		xEventGroupSetBits(event_group, HAVE_WIFI);
-		break;
-	case SYSTEM_EVENT_STA_DISCONNECTED:
-Log ("SYSTEM_EVENT_STA_DISCONNECTED");
-		xEventGroupClearBits(event_group, HAVE_WIFI);
-
-		if (sent || ++retry_count > 1)
-			xEventGroupSetBits(event_group, NO_WIFI);
-		else {
-Log ("esp_wifi_connect");
-			DbgR (esp_wifi_connect());	// try once again
-		}
-		break;
-	default:
-Log ("ignoring SYSTEM_EVENT %d", event->event_id);
-		break;
-	}
-
-	return ESP_OK;
-}
-
-static esp_err_t wifi_setup(void)
-{
-#if 000		// no effect
-Log ("esp_phy_load_cal_and_init");
-	esp_phy_load_cal_and_init();	// no effect
+#if 000	// fixed cycle length
+	sleep_length_us = SLEEP_S*1000000 - sleep_start_us;
+	if (sleep_length_us <= 0)
+		sleep_length_us = 1;
+#else	// fixed sleep length
+	sleep_length_us = SLEEP_S*1000000;
 #endif
-
-Log ("nvs_flash_init");
-	DbgR (nvs_flash_init());
-
-Log ("tcpip_adapter_init");
-	tcpip_adapter_init();
-
-	DbgR (set_ip());
-
-Log ("esp_event_loop_init");
-	DbgR (esp_event_loop_init(event_handler, NULL));
-
-	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-Log ("esp_wifi_init");
-	DbgR (esp_wifi_init(&cfg));
-
-	if (!woke_up) {	// otherwise this was saved in flash
-Log ("esp_wifi_set_storage(WIFI_STORAGE_FLASH)");
-		DbgR (esp_wifi_set_storage(WIFI_STORAGE_FLASH));
-
-Log ("esp_wifi_set_mode(WIFI_MODE_STA)");
-		DbgR (esp_wifi_set_mode(WIFI_MODE_STA));
-
-		wifi_config_t wifi_config = {
-			.sta = {
-				.ssid     = AP_SSID,
-				.password = AP_PASS,
-				.bssid_set = 0,
-				.channel = 6
-			},
-		};
-Log ("esp_wifi_set_config(ESP_IF_WIFI_STA)");
-		DbgR (esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-
-Log ("esp_wifi_set_auto_connect(true)");
-		DbgR (esp_wifi_set_auto_connect(true));
-	} else {
-Log ("esp_wifi_set_storage(WIFI_STORAGE_RAM)");
-		DbgR (esp_wifi_set_storage(WIFI_STORAGE_RAM));
-	}
-
-Log ("esp_wifi_start");
-	time_wifi_us = gettimeofday_us();
-	DbgR (esp_wifi_start());
-
-Log ("esp_wifi_connect");
-	DbgR (esp_wifi_connect());
-
-	return ESP_OK;
+	esp_deep_sleep(sleep_length_us);
+	vTaskDelete(NULL);
 }
 
 static esp_err_t app (void)
@@ -841,22 +699,18 @@ Log("xEventGroupWaitBits(HAVE_WIFI|NO_WIFI)");
 	xEventGroupWaitBits(event_group, HAVE_WIFI|NO_WIFI,
 		false, false, WIFI_TIMEOUT_MS / portTICK_PERIOD_MS);
 	bits = xEventGroupGetBits (event_group);
-	if (0 == bits) {
-		Log ("WiFi timed out, aborting");
-		return ESP_FAIL;
-	}
-	if (!(HAVE_WIFI & bits)) {
-		Log ("no WiFi, aborting");
-		return ESP_FAIL;
-	}
+	if (0 == bits)
+		LogR (ESP_FAIL, "WiFi timed out, aborting");
+	if (!(HAVE_WIFI & bits))
+		LogR (ESP_FAIL, "no WiFi, aborting");
 Log ("have WiFi");
 
 // need to do this late to have wifi timing
 Log ("format_message");
 	mlen = format_message (message, sizeof(message));
 
-Log ("send_message");
-	send_message (message, mlen);
+Log ("wifi_send_message");
+	wifi_send_message (message, mlen);
 Log ("sent message");
 	sent = 1;
 
@@ -917,7 +771,7 @@ void app_main ()
 	woke_up = reset_reason == DEEPSLEEP_RESET;
 
 	if (do_log && !woke_up)	// cold start
-		delay_ms (500);	// give 'screen' time to start
+		delay_ms (100);	// give 'screen' time to start
 
 	Log ("app built at %s %s", __DATE__, __TIME__);
 
