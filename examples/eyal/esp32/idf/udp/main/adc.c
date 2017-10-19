@@ -46,6 +46,34 @@ esp_err_t adc_init (int width, int vref)
 	return ESP_OK;
 }
 
+#if 000
+// see  components/driver/include/driver/adc.h
+typedef enum {
+    ADC1_CHANNEL_0 = 0, /*!< ADC1 channel 0 is GPIO36 */
+    ADC1_CHANNEL_1,     /*!< ADC1 channel 1 is GPIO37 */
+    ADC1_CHANNEL_2,     /*!< ADC1 channel 2 is GPIO38 */
+    ADC1_CHANNEL_3,     /*!< ADC1 channel 3 is GPIO39 */
+    ADC1_CHANNEL_4,     /*!< ADC1 channel 4 is GPIO32 */
+    ADC1_CHANNEL_5,     /*!< ADC1 channel 5 is GPIO33 */
+    ADC1_CHANNEL_6,     /*!< ADC1 channel 6 is GPIO34 */
+    ADC1_CHANNEL_7,     /*!< ADC1 channel 7 is GPIO35 */
+    ADC1_CHANNEL_MAX,
+} adc1_channel_t;
+typedef enum {
+    ADC2_CHANNEL_0 = 0, /*!< ADC2 channel 0 is GPIO4 */
+    ADC2_CHANNEL_1,     /*!< ADC2 channel 1 is GPIO0 */
+    ADC2_CHANNEL_2,     /*!< ADC2 channel 2 is GPIO2 */
+    ADC2_CHANNEL_3,     /*!< ADC2 channel 3 is GPIO15 */
+    ADC2_CHANNEL_4,     /*!< ADC2 channel 4 is GPIO13 */
+    ADC2_CHANNEL_5,     /*!< ADC2 channel 5 is GPIO12 */
+    ADC2_CHANNEL_6,     /*!< ADC2 channel 6 is GPIO14 */
+    ADC2_CHANNEL_7,     /*!< ADC2 channel 7 is GPIO27 */
+    ADC2_CHANNEL_8,     /*!< ADC2 channel 8 is GPIO25 */
+    ADC2_CHANNEL_9,     /*!< ADC2 channel 9 is GPIO26 */
+    ADC2_CHANNEL_MAX,
+} adc2_channel_t;
+#endif
+
 esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 {
 	adc1_channel_t channel;
@@ -55,28 +83,28 @@ esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 
 	switch (pin) {
 	case  36:
-		channel = ADC1_CHANNEL_0;
+		channel = ADC1_GPIO36_CHANNEL;
 		break;
 	case  37:
-		channel = ADC1_CHANNEL_1;
+		channel = ADC1_GPIO37_CHANNEL;
 		break;
 	case  38:
-		channel = ADC1_CHANNEL_2;
+		channel = ADC1_GPIO38_CHANNEL;
 		break;
 	case  39:
-		channel = ADC1_CHANNEL_3;
+		channel = ADC1_GPIO39_CHANNEL;
 		break;
 	case  32:
-		channel = ADC1_CHANNEL_4;
+		channel = ADC1_GPIO32_CHANNEL;
 		break;
 	case  33:
-		channel = ADC1_CHANNEL_5;
+		channel = ADC1_GPIO33_CHANNEL;
 		break;
 	case  34:
-		channel = ADC1_CHANNEL_6;
+		channel = ADC1_GPIO34_CHANNEL;
 		break;
 	case  35:
-		channel = ADC1_CHANNEL_7;
+		channel = ADC1_GPIO35_CHANNEL;
 		break;
 	default:
 		LogR (ESP_FAIL, "bad ADC pin %d", pin);
