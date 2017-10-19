@@ -60,7 +60,7 @@ static esp_err_t set_ip (void)
 Log ("tcpip_adapter_dhcpc_stop");
 	DbgR (tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
 
-Log ("tcpip_adapter_set_ip_info");
+Log ("tcpip_adapter_set_ip_info ip=%s nm=%s gw=%s", MY_IP, MY_NM, MY_GW);
 	tcpip_adapter_ip_info_t ip_info_new;
 	memset (&ip_info_new, 0, sizeof(ip_info_new));
 	ip4addr_aton(MY_IP, &ip_info_new.ip);
@@ -104,13 +104,14 @@ Log("xEventGroupSetBits");
 		xEventGroupSetBits(event_group, HAVE_WIFI);
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
-Log ("SYSTEM_EVENT_STA_DISCONNECTED");
+Log ("SYSTEM_EVENT_STA_DISCONNECTED reason %d", event->event_info.disconnected.reason);
+// see https://dl.espressif.com/doc/esp-idf/latest/api-guides/wifi.html#wi-fi-reason-code
 		xEventGroupClearBits(event_group, HAVE_WIFI);
 
 		if (sent || ++retry_count > 1)
 			xEventGroupSetBits(event_group, NO_WIFI);
 		else {
-Log ("esp_wifi_connect");
+Log ("esp_wifi_connect retry");
 			DbgR (esp_wifi_connect());	// try once again
 		}
 		break;
@@ -135,6 +136,9 @@ Log ("esp_event_loop_init");
 Log ("tcpip_adapter_init");
 	tcpip_adapter_init();
 
+Log ("nvs_flash_init");
+	DbgR (nvs_flash_init());
+
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 Log ("esp_wifi_init");
 	DbgR (esp_wifi_init(&cfg));
@@ -142,9 +146,6 @@ Log ("esp_wifi_init");
 	DbgR (set_ip());
 
 	if (!woke_up) {	// otherwise this was saved in flash
-Log ("nvs_flash_init");
-		DbgR (nvs_flash_init());
-
 Log ("esp_wifi_set_storage(WIFI_STORAGE_FLASH)");
 		DbgR (esp_wifi_set_storage(WIFI_STORAGE_FLASH));
 
@@ -159,7 +160,8 @@ Log ("esp_wifi_set_mode(WIFI_MODE_STA)");
 				.channel = 6
 			},
 		};
-Log ("esp_wifi_set_config(ESP_IF_WIFI_STA)");
+Log ("esp_wifi_set_config(ESP_IF_WIFI_STA) ap='%s' ch=%d",
+	wifi_config.sta.ssid, wifi_config.sta.channel);
 		DbgR (esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 
 //Log ("esp_wifi_set_auto_connect(true)");
