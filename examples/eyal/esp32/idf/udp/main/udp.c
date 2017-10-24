@@ -16,6 +16,9 @@
 #include <driver/timer.h>	// timer_get_counter_time_sec()
 #include <soc/efuse_reg.h>	// needed by getChip*()
 
+#include <soc/rtc.h>
+#include <esp_clk.h>
+
 #ifndef MY_NAME
 #define MY_NAME			"test"
 #endif
@@ -152,9 +155,6 @@ static uint64_t app_start_us = 0;
 static uint64_t app_start_ticks = 0;
 static int wakeup_cause;
 static int reset_reason;
-
-// The following functions are missing a prototype.
-uint64_t rtc_time_get(void);		// raw RTC time in ticks
 
 #if 001
 // this is my simplified version of _gettimeofday_r(), added to time.c
@@ -504,14 +504,12 @@ static int format_message (char *message, int mlen)
 	}
 
     {
-	uint64_t system_get_rtc_time(void);
-	uint64_t get_time_since_boot_us(void);
-	uint32_t esp_clk_slowclk_cal_get (void);
+	uint64_t get_time_since_boot_64(void);		// my exported 64-bit version
 
-	uint64_t RTC   = system_get_rtc_time();		// R RTC time (adjusted ticks)
+	uint64_t RTC   = esp_clk_rtc_time();		// R RTC time (adjusted ticks)
 		// RTC = ticks * tCal / 2^19
 	uint64_t FRC   = gettimeofday_us();		// F FRC (adjusted)
-	uint64_t FRCr  = get_time_since_boot_us();	// f FRC (raw)
+	uint64_t FRCr  = get_time_since_boot_64();	// f FRC (raw)
 	uint32_t tCal = esp_clk_slowclk_cal_get();	// C slow_cal
 	uint64_t ticks = rtc_time_get();		// t RTC time (raw ticks, 150mHz)
 
