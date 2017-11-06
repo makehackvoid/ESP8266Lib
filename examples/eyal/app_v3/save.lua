@@ -109,8 +109,8 @@ reason = ri.reason;
 
 	local radio = ""
 	if send_radio then
-		radio = (" radio=s%d"):format(
-			-sta.getrssi())
+		radio = (" radio=s%d,c%d"):format(
+			-sta.getrssi(), wifi.getchannel())
 	end
 
 	if not weather then weather = "" end

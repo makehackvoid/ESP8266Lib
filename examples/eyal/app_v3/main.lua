@@ -183,7 +183,9 @@ local function domain()
 		return false
 	end
 
-	if adc_en_pin and adc_en_pin > 0 then
+	if not adc_en_pin then
+		adc_en_pin = 0
+	elseif adc_en_pin > 0 then
 		gpio.mode (adc_en_pin, gpio.OUTPUT)
 		gpio.write(adc_en_pin, gpio.LOW)
 	end

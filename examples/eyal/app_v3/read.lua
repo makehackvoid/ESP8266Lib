@@ -14,7 +14,7 @@ local function no_ow()
 end
 
 local function read_ds18b20()
-----	--- save memory ---
+---- save memory ----
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -70,12 +70,12 @@ local good = 0
 	end
 Trace(6+good)
 	return true
---- save memory --- --]]
+---- save memory ----
 --	return false
 end
 
 local function read_bme280()
-----	--- save memory ---
+---- save memory ----
 	out_bleep()
 	local speed = i2c.setup(0, i2c_SDA, i2c_SCL, i2c.SLOW)
 	if 0 == speed then
@@ -129,12 +129,12 @@ local function read_bme280()
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 	return true
---- save memory --- --]]
+---- save memory ----
 --	return false
 end
 
 local function read_ds3231()
-----	--- save memory ---
+---- save memory ----
 	if print_dofile then Log("calling ds3231") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -161,7 +161,7 @@ local function read_ds3231()
 	ds3231, package.loaded["ds3231"] = nil, nil
 
 	return ret
---- save memory --- --]]
+---- save memory ----
 --	return false
 end
 
@@ -189,6 +189,8 @@ local function doread()
 	for device in string.gmatch(read_device, "[^,]+") do
 		Log ("reading '%s'", device)
 		if device == "ds18b20" then
+--			Log ("%s is disabled", device)
+---- save memory ---
 			if have_pin(ow_pin, "OW", device) then
 				if #ow_addr < 1 then
 					Log ("no ow devices listed for %s", device)
@@ -199,21 +201,27 @@ local function doread()
 			read_ds18b20 = nil
 			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
 			device = nil
+---- save memory ---
 		end
 		if device == "bme280" then
+--			Log ("%s is disabled", device)
+---- save memory ---
 			if have_i2c(device) then
 				read_bme280()	-- ignore failure
 			end
 			read_bme280 = nil
 			device = nil
+---- save memory ----
 		end
 		if device == "ds3231" then
-			Log ("%s is disabled", device)
+--			Log ("%s is disabled", device)
+---- save memory ---
 			if have_i2c(device) then
 				read_ds3231()	-- ignore failure
 			end
 			read_ds3231 = nil
 			device = nil
+---- save memory ----
 		end
 		if device then
 			local pgm = ("read-%s"):format(device)
