@@ -1,3 +1,5 @@
+-- Note: the 'save memory' sections are used to disable some devices to fit the app into
+-- a small (512KB) flash.
 local tmr = tmr
 time_read = tmr.now()
 done_file (time_read)
@@ -13,8 +15,44 @@ local function no_ow()
 	end
 end
 
+local function have_pin(pin, pin_name, device_name)
+	if not pin then
+		Log ("no %s pin for %s", pin_name, device_name)
+		return false
+	end
+	if pin < 1  or pin > 13 then	-- see GPIO_PIN_NUM in app/platform/pin_map.h
+		Log ("invalid %s pin %d for %s", pin_name, pin, device_name)
+		return false
+	end
+	return true
+end
+
+local function have_ow(device_name)
+	if not ow then 
+		Log ("no ow module for %s", device_name)
+		return false
+	end
+	return have_pin(ow_pin, "OW", device_name)
+end
+
+local function have_i2c(device_name)
+	if not i2c then 
+		Log ("no i2c module for %s", device_name)
+		return false
+	end
+	return have_pin(i2c_SDA, "SDA", device_name) and
+	   have_pin(i2c_SCL, "SCL", device_name)
+end
+
 local function read_ds18b20()
 ---- save memory ----
+	if not have_ow(device) then
+		return false
+	end
+	if #ow_addr < 1 then
+		Log ("no ow devices configured")
+		return false
+	end
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -23,7 +61,7 @@ local function read_ds18b20()
 		Trace(1)
 		Log("required ds18b20 failed")
 		no_ow()
-		incrementCounter(rtca_failRead);
+		incrementCounter(rtca_failRead)
 		return false
 	end
 	local tm = tmr.now()
@@ -35,7 +73,7 @@ local function read_ds18b20()
 		Trace(2)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
 		no_ow()
-		incrementCounter(rtca_failRead);
+		incrementCounter(rtca_failRead)
 		return false
 	end
 
@@ -43,7 +81,7 @@ local function read_ds18b20()
 		ow_addr = t.addrs()
 		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
-			incrementCounter(rtca_failRead);
+			incrementCounter(rtca_failRead)
 			return false
 		end
 	end
@@ -54,15 +92,15 @@ local good = 0
 		if tC == nil then
 			Trace(3)
 			tC = 86
-			incrementCounter(rtca_failRead);
+			incrementCounter(rtca_failRead)
 		else
 			good = good + 1
 			if tC == "85.0" then
 				tC = 87
-				incrementCounter(rtca_failRead);
+				incrementCounter(rtca_failRead)
 			elseif  tC == 127.9375 then
 				tC = 88
-				incrementCounter(rtca_failRead);
+				incrementCounter(rtca_failRead)
 			end
 		end
 		temp[#temp+1] = tC
@@ -71,12 +109,15 @@ local good = 0
 Trace(6+good)
 	return true
 ---- save memory ----
---	return false
+--	Log ("%s is disabled", device) return false
 end
 
-local function read_bme280()
----- save memory ----
+local function read_bme280(device)
+--[[ save memory ----
 	out_bleep()
+	if not have_i2c(device) then
+		return false
+	end
 	local speed = i2c.setup(0, i2c_SDA, i2c_SCL, i2c.SLOW)
 	if 0 == speed then
 		Trace(6)
@@ -129,12 +170,15 @@ local function read_bme280()
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 	return true
----- save memory ----
---	return false
+---- save memory --]]
+	Log ("%s is disabled", device) return false
 end
 
-local function read_ds3231()
----- save memory ----
+local function read_ds3231(device)
+--[[ save memory ----
+	if not have_i2c(device) then
+		return false
+	end
 	if print_dofile then Log("calling ds3231") end
 	out_bleep()
 	start_dofile = tmr.now()
@@ -161,25 +205,8 @@ local function read_ds3231()
 	ds3231, package.loaded["ds3231"] = nil, nil
 
 	return ret
----- save memory ----
---	return false
-end
-
-local function have_pin(pin, pin_name, device_name)
-	if not pin then
-		Log ("no %s pin for %s", pin_name, device_name)
-		return false
-	end
-	if pin < 1  or pin > 13 then	-- see GPIO_PIN_NUM in app/platform/pin_map.h
-		Log ("invalid %s pin %d for %s", pin_name, pin, device_name)
-		return false
-	end
-	return true
-end
-
-local function have_i2c(device_name)
-	return have_pin(i2c_SDA, "SDA", device_name) and
-	   have_pin(i2c_SCL, "SCL", device_name)
+---- save memory --]]
+	Log ("%s is disabled", device) return false
 end
 
 temp = {}
@@ -189,39 +216,20 @@ local function doread()
 	for device in string.gmatch(read_device, "[^,]+") do
 		Log ("reading '%s'", device)
 		if device == "ds18b20" then
---			Log ("%s is disabled", device)
----- save memory ---
-			if have_pin(ow_pin, "OW", device) then
-				if #ow_addr < 1 then
-					Log ("no ow devices listed for %s", device)
-				else
-					read_ds18b20()	-- ignore failure
-				end
-			end
+			read_ds18b20(device)	-- ignore failure
 			read_ds18b20 = nil
 			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
 			device = nil
----- save memory ---
 		end
 		if device == "bme280" then
---			Log ("%s is disabled", device)
----- save memory ---
-			if have_i2c(device) then
-				read_bme280()	-- ignore failure
-			end
+			read_bme280(device)	-- ignore failure
 			read_bme280 = nil
 			device = nil
----- save memory ----
 		end
 		if device == "ds3231" then
---			Log ("%s is disabled", device)
----- save memory ---
-			if have_i2c(device) then
-				read_ds3231()	-- ignore failure
-			end
+			read_ds3231(device)	-- ignore failure
 			read_ds3231 = nil
 			device = nil
----- save memory ----
 		end
 		if device then
 			local pgm = ("read-%s"):format(device)
