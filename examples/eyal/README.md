@@ -76,3 +76,9 @@ reWiFi.lua
 ----------
 
 A test program that waits for WiFi to acquire an IP, then reboots (3 seconds dsleep). Used to test the wakeup problem.
+
+clock/
+------
+
+Sketches for the MHV wall clock.
+
