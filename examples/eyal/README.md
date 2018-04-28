@@ -60,7 +60,7 @@ Basic manupulation of some i2c modules.
 iw.lua
 ------
 
-A test program to show a `wifi.suspend()` crash.
+A test program to show a `wifi.suspend()` crash. Rename to `init.lua`.
 
 reBoot.lua
 ----------
