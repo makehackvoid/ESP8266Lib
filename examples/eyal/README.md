@@ -57,6 +57,11 @@ ds3231/, ds1307/, lm75/, pca9555/, at24c32/
 
 Basic manupulation of some i2c modules.
 
+iw.lua
+------
+
+A test program to show a `wifi.suspend()` crash.
+
 reBoot.lua
 ----------
 
