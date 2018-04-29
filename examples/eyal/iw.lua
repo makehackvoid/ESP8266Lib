@@ -40,7 +40,11 @@ local function retry()
 	Log ("suspend status=%d", wifi.suspend())
 
 	Log ("suspending")
-	wifi.suspend({wifi_suspend_time, dummy, dummy, true})	-- 50 ms
+	wifi.suspend({
+		duration      = wifi_suspend_time,
+		suspend_cb    = function() print("wifi suspended") end,
+		resume_cb     = function() print("wifi resumed")   end,
+		preserve_mode = true})
 end
 
 local function dowifi()
