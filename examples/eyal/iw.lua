@@ -92,12 +92,24 @@ local function dowifi()
 	end)
 end
 
+local function show_reason()
+	local _, reset_reason, EXCCAUSE, EPC1, EPC2, EPC3, EXCVADDR, depc= node.bootreason()
+	if (reset_reason~=0 and reset_reason~=5 and reset_reason~=6) then
+		if (reset_reason==2) then
+			print(string.format("\treset_reason:%i EXCCAUSE:%i EPC1:%X EPC2:%X EPC3:%X EXCVADDR:%X DEPC:%i", reset_reason, EXCCAUSE, EPC1, EPC2, EPC3, EXCVADDR, depc))
+		else
+			print(string.format("\treset_reason:%i", reset_reason))
+		end
+	end  
+end
+
 local magic_pin = 1	-- gpio5 or D1
 
 gpio.mode (magic_pin, gpio.INPUT, gpio.PULLUP)
 if 0 == gpio.read (magic_pin) then
 	Log ("aborting by magic")
 else
+	show_reason()
 	dowifi()
 end
 
