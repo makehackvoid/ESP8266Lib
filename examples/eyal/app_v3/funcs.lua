@@ -1,6 +1,9 @@
 -- this makes no difference in this app:
 -- node.egc.setmode(node.egc.ON_ALLOC_FAILURE)	-- default is ALWAYS
 
+local Rr = rtcmem.read32
+local Rw = rtcmem.write32
+
 function mLog (modname, message, ...)
 	if nil == print_log or print_log then
 		if #arg > 0 then
@@ -31,16 +34,16 @@ this_trace_h, this_trace_l = 0, 0
 
 function mTrace(mod, n, new)
 	if nil ~= rtcmem then
-		if not rtca_tracePointH then
-			rtca_tracePointH = 127 - 8	-- see main.lua!
-			rtca_tracePointL = rtca_tracePointH - 1
+		if not RtracePointH then
+			RtracePointH = 127 - 8	-- see main.lua!
+			RtracePointL = RtracePointH - 1
 		end
 		if 0xffffffff == last_trace_h then	-- first call
-			last_trace_h = rtcmem.read32(rtca_tracePointH)
+			last_trace_h = Rr(RtracePointH)
 --			if last_trace_h < 0 then
 --				last_trace_h = 0x10000000*16+last_trace_h
 --			end
-			last_trace_l = rtcmem.read32(rtca_tracePointL)
+			last_trace_l = Rr(RtracePointL)
 --			if last_trace_l < 0 then
 --				last_trace_l = 0x10000000*16+last_trace_l
 --			end
@@ -62,8 +65,8 @@ function mTrace(mod, n, new)
 				mod, n, (new and ", true" or ""),
 				t_h, t_l, this_trace_h, this_trace_l)
 		end
-		rtcmem.write32(rtca_tracePointH, this_trace_h)
-		rtcmem.write32(rtca_tracePointL, this_trace_l)
+		Rw(RtracePointH, this_trace_h)
+		Rw(RtracePointL, this_trace_l)
 	end
 end
 local function Trace(n, new) mTrace(1, n, new) end Trace (0, true)
@@ -76,7 +79,20 @@ function used ()
 end
 
 function do_file(fname, fg)
-	local fullName = ("%s%s"):format(fname, (lua_type or ".lc"))
+	lua_type = lua_type or ".lc"
+	local fullName = ("%s%s"):format(fname, (lua_type))
+	if not file.exists(fullName) then
+		if '.lc' == lua_type then
+			fullName = ("%s%s"):format(fname, ".lua")
+		else
+			fullName = ("%s%s"):format(fname, ".lc")
+		end
+		if not file.exists(fullName) then
+			Log("no file '%s'", fname)
+			return false
+		end
+	end
+
 	if print_dofile then
 		Log("dofile call %s", fullName)
 	end
@@ -121,9 +137,11 @@ function safe_dsleep(us, mode)
 	if us < 10 then us = 10 end	-- SDK 2.1.0 cannot handle short periods
 	if print_log then
 		tmr.create():alarm(5, tmr.ALARM_SINGLE, function()
+			out_bleep()
 			dsleep (us, mode, 1)
 		end)
 	else
+		out_bleep()
 		dsleep (us, mode, 1)
 	end
 end
@@ -137,8 +155,6 @@ function restart_really(time_left)
 --		gpio.mode (ow_pin, gpio.INPUT, gpio.PULLUP)
 --	end
 
-	out_bleep()
-
 --[[
 	WAKE_RF_DEFAULT  = 0 -- CAL or not after wake up, depends on init data byte 108.
 	WAKE_RFCAL       = 1 -- CAL        after wake up, there will be large current.
@@ -150,7 +166,7 @@ function restart_really(time_left)
 		local rf_mode = 1
 		if do_vdd_read_cycle then
 			Log ("saving vddAdjTime=%.6f", time_left/1000000)
-			rtcmem.write32(rtca_vddAdjTime, time_left)
+			Rw(RvddAdjTime, time_left)
 			time_left = 1	-- immed wakeup for vdd read
 			rf_mode = 4	-- no wifi for vdd read
 		elseif rfcal_rate then
@@ -158,7 +174,7 @@ function restart_really(time_left)
 			rf_mode = (runCount % rfcal_rate > 0) and 2 or 1
 		end
 		Log("dsleep(%.3f,%d) runCount=%d", time_left/1000000, rf_mode, (runCount or 0))
---		rtctime.dsleep_aligned ((sleep_time+dsleep_delay)*rtc_rate, 0, rf_mode)
+--		rtctime.dsleep_aligned ((sleep_time+wakeup_delay)*rtc_rate, 0, rf_mode)
 		safe_dsleep (time_left, rf_mode)
 	else
 		Log("doing dsleep(1) for restart")
@@ -169,23 +185,23 @@ end
 
 function restart(time_left)
 	if have_rtc_mem then
-		local thisTime = tmr.now() + (wakeup_delay+dsleep_delay)*rtc_rate	-- us
-		rtcmem.write32(rtca_lastTime, thisTime)					-- us
-		local totalTime = rtcmem.read32(rtca_totalTime)				-- ms
-		rtcmem.write32(rtca_totalTime, totalTime + thisTime/1000)		-- ms
-		rtcmem.write32(rtca_timeLeft, (time_left or 0))				-- us
+		local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
+		Rw(RlastTime, thisTime)					-- us
+		local totalTime = Rr(RtotalTime)				-- ms
+		Rw(RtotalTime, totalTime + thisTime/1000)		-- ms
+		Rw(RtimeLeft, (time_left or 0))				-- us
 
 		if adc_factor and vddNextTime > 0 then
-			local t = 1000*rtcmem.read32(rtca_vddNextTime)			-- ms -> us
+			local t = 1000*Rr(RvddNextTime)			-- ms -> us
 			local l = time_left or 0
 			Log ("t=%.6f sleep_time=%.6f l=%.6f",
 				t/1000000, sleep_time/1000000, l/1000000)
 			if t > sleep_time then
 				t = t - l
-				rtcmem.write32(rtca_vddNextTime, t/1000)		-- us -> ms
+				Rw(RvddNextTime, t/1000)		-- us -> ms
 				Log ("time to next vdd read: %.6f", t/1000000)
 			else
-				rtcmem.write32(rtca_vddNextTime, vddNextTime)		-- ms
+				Rw(RvddNextTime, vddNextTime)		-- ms
 				adc.force_init_mode(adc.INIT_VDD33)
 				grace_time = grace_time + 43*1000	-- adc.force takes 43ms
 				do_vdd_read_cycle = true
@@ -231,37 +247,37 @@ function restart(time_left)
 end
 
 function doSleep ()
-	local sleep_start = tmr.now() + wakeup_delay*rtc_rate
+	local sleep_start = tmr.now() + dsleep_delay*rtc_rate
 	local time_left
 	local sleep_time = sleep_time*rtc_rate		-- us time each cycle
 	if sleep_time > 0 then				-- dsleep requested
-		time_left = sleep_time - (sleep_start + dsleep_delay*rtc_rate)
+		time_left = sleep_time - (sleep_start + wakeup_delay*rtc_rate)
 		if time_left > 0 then
 			Log("dsleep %gs", time_left/1000000)
-			Trace(1, true)
+			Trace (1, true)
 			restart (time_left)
 		else
 			Log("restart now\n")
-			Trace(2, true)
+			Trace (2, true)
 			restart (0)
 		end
 	elseif sleep_time < 0 then			-- wait requested
 		time_left = (-sleep_time - sleep_start) / 1000
 		if time_left <= 0 then
 			Log("restart now\n")
-			Trace(3, true)
+			Trace (3, true)
 			restart (0)
 		else
 			Log("restart in %gs", time_left/1000)
 			tmr.create():alarm(time_left, tmr.ALARM_SINGLE, function()
-				Trace(4, true)
+				Trace (4, true)
 				restart (0)
 			end)
 		end
 	else
 		Log("not sleeping")
 		runCount = nil	-- in case we rerun in same env
-		Trace(5, true)
+		Trace (5, true)
 		restart (nil)		-- just update stats
 	end
 end
@@ -269,9 +285,9 @@ end
 function incrementCounter(address)
 	if not have_rtc_mem then return 1 end
 
-	local count = rtcmem.read32(address)
+	local count = Rr(address)
 	if count ~= 0xffffffff then count = count + 1 end
-	rtcmem.write32(address, count)
+	Rw(address, count)
 	return count
 end
 

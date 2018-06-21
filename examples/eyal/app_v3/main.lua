@@ -6,7 +6,8 @@ used ()
 out_bleep()
 
 local sta = wifi.sta
-local rtcmem = rtcmem
+local Rr = rtcmem.read32
+local Rw = rtcmem.write32
 
 -- address in RTC of counters and value of magic
 local function setup_rtcmem()
@@ -16,61 +17,61 @@ local function setup_rtcmem()
 		return true
 	end
 	rtc_magic        = rtc_magic        or 0x6adadad0	-- keep below 0x80000000
-	rtca_magic       = rtca_magic       or 127		-- last slot
-	rtca_runCount    = rtca_runCount    or (rtca_magic - 1)
-	rtca_failSoft    = rtca_failSoft    or (rtca_magic - 2)
-	rtca_failHard    = rtca_failHard    or (rtca_magic - 3)
-	rtca_failRead    = rtca_failRead    or (rtca_magic - 4)
-	rtca_lastTime    = rtca_lastTime    or (rtca_magic - 5)
-	rtca_totalTime   = rtca_totalTime   or (rtca_magic - 6)
-	rtca_timeLeft    = rtca_timeLeft    or (rtca_magic - 7)
-	rtca_tracePointH = rtca_tracePointH or (rtca_magic - 8)
-	rtca_tracePointL = rtca_tracePointL or (rtca_magic - 9)
-	rtca_vddNextTime = rtca_vddNextTime or (rtca_magic - 10)	-- ms to next vdd read
-	rtca_vddLastRead = rtca_vddLastRead or (rtca_magic - 11)
-	rtca_vddAdjTime  = rtca_vddAdjTime  or (rtca_magic - 12)
+	Rmagic       = Rmagic       or 127		-- last slot
+	RrunCount    = RrunCount    or (Rmagic -  1)
+	RfailSoft    = RfailSoft    or (Rmagic -  2)
+	RfailHard    = RfailHard    or (Rmagic -  3)
+	RfailRead    = RfailRead    or (Rmagic -  4)
+	RlastTime    = RlastTime    or (Rmagic -  5)
+	RtotalTime   = RtotalTime   or (Rmagic -  6)
+	RtimeLeft    = RtimeLeft    or (Rmagic -  7)
+	RtracePointH = RtracePointH or (Rmagic -  8)
+	RtracePointL = RtracePointL or (Rmagic -  9)
+	RvddNextTime = RvddNextTime or (Rmagic - 10)	-- ms to next vdd read
+	RvddLastRead = RvddLastRead or (Rmagic - 11)
+	RvddAdjTime  = RvddAdjTime  or (Rmagic - 12)
 
-	newRun = rtc_magic ~= rtcmem.read32(rtca_magic)
+	newRun = rtc_magic ~= Rr(Rmagic)
 	if newRun then
-		rtcmem.write32(rtca_runCount, 0)
-		rtcmem.write32(rtca_failSoft, 0)
-		rtcmem.write32(rtca_failHard, 0)
-		rtcmem.write32(rtca_failRead, 0)
-		rtcmem.write32(rtca_lastTime, 0)
-		rtcmem.write32(rtca_totalTime, 0)
-		rtcmem.write32(rtca_timeLeft, 0)
-		rtcmem.write32(rtca_tracePointH, 0xffffffff)
-		rtcmem.write32(rtca_tracePointL, 0xffffffff)
+		Rw(RrunCount, 0)
+		Rw(RfailSoft, 0)
+		Rw(RfailHard, 0)
+		Rw(RfailRead, 0)
+		Rw(RlastTime, 0)
+		Rw(RtotalTime, 0)
+		Rw(RtimeLeft, 0)
+		Rw(RtracePointH, 0xffffffff)
+		Rw(RtracePointL, 0xffffffff)
 		last_trace_h, last_trace_l = 0xffffffff, 0xffffffff
-		rtcmem.write32(rtca_vddNextTime, vddNextTime)
-		rtcmem.write32(rtca_vddLastRead, 3300)
-		rtcmem.write32(rtca_vddAdjTime, 0)
-		rtcmem.write32(rtca_magic, rtc_magic)
+		Rw(RvddNextTime, vddNextTime)
+		Rw(RvddLastRead, 3300)
+		Rw(RvddAdjTime, 0)
+		Rw(Rmagic, rtc_magic)
 		Log ("run initialized")
 	end
 	return true
 end
 
 local function read_vdd()
-	local adjTime = rtcmem.read32(rtca_vddAdjTime)
+	local adjTime = Rr(RvddAdjTime)
 	if 0 == adjTime then return true end
 
 	Trace (3, true)
 
 	-- read vdd then restart
 	Log ("found vddAdjTime=%.6f", adjTime/1000000)
-	rtcmem.write32(rtca_vddAdjTime, 0)
+	Rw(RvddAdjTime, 0)
 	Log ("reading vdd")
 	local vdd = adc.readvdd33(0)*(vdd_factor or 1)
-	rtcmem.write32(rtca_vddLastRead, vdd)
-	rtcmem.write32(rtca_vddNextTime, vddNextTime)	-- new vdd cycle
+	Rw(RvddLastRead, vdd)
+	Rw(RvddNextTime, vddNextTime)	-- new vdd cycle
 	adc.force_init_mode(adc.INIT_ADC)
 
 	-- update activity time stats
-	local thisTime = tmr.now() + (wakeup_delay+dsleep_delay)*rtc_rate	-- us
-	rtcmem.write32(rtca_lastTime, thisTime)
-	local totalTime = rtcmem.read32(rtca_totalTime)				-- ms
-	rtcmem.write32(rtca_totalTime, totalTime + thisTime/1000)
+	local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
+	Rw(RlastTime, thisTime)
+	local totalTime = Rr(RtotalTime)				-- ms
+	Rw(RtotalTime, totalTime + thisTime/1000)
 
 	-- sleep for how long?
 	adjTime = adjTime - thisTime
@@ -107,11 +108,13 @@ local function wifi_setup()
 	save_proto = save_proto or "udp"	-- "udp", "tcp" or "mqtt"
 
 -- how many ms to wait before aborting a wifi operation
-	wifi_timeout  =  wifi_timeout  or 5000	-- waiting for wifi
-	first_timeout =  first_timeout or 4000	-- waiting for 'first' response
-	save_udp_timeout   =  save_udp_timeout   or 5000
-	save_tcp_timeout   =  save_tcp_timeout   or 5000
-	save_mqtt_timeout  =  save_mqtt_timeout  or 5000
+	wifi_first_timeout = wifi_first_timeout or 3000	-- waiting for wifi
+	wifi_retry_timeout = wifi_retry_timeout or 3000	-- waiting for wifi retry
+	wifi_retry_max     = wifi_retry_max     or    1	-- times to retry
+	first_timeout      = first_timeout      or 4000	-- waiting for 'first' response
+	save_udp_timeout   = save_udp_timeout   or 5000
+	save_tcp_timeout   = save_tcp_timeout   or 5000
+	save_mqtt_timeout  = save_mqtt_timeout  or 5000
 
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
 	if "udp" == save_proto then
@@ -123,10 +126,19 @@ local function wifi_setup()
 -- end of message marker
 	save_eom = save_eom or ''
 
--- how often to do WiFi RFCAL
-	rfcal_rate = rfcal_rate or 10
+-- we want to set this early (to limit the channel scan)
+if wifi.getcountry and wifi.setcountry then
+	local country = country
+	if nil == country then
+		country = "AU"
+	end
+	if country ~= wifi.getcountry().country then
+		wifi.setcountry({country=country, start_ch=1, end_ch=11, policy=wifi.COUNTRY_AUTO})
+		Log ("wifi.country set to '%s' channels [1,11]", country)
+	end
+end
 
--- we want to set this up asap (to stop dhcpc)
+-- we want to set this early (to stop dhcpc)
 	local ip = sta.getip()
 	if not ip or ip ~= clientIP then
 		Trace (1)
@@ -147,10 +159,6 @@ end
 
 local function domain()
 	Log ("version #VERSION#")	-- will become: DATETIME DIR
-
--- how to execute lua programs?
--- if they were compiled then use ".lc", otherwise use ".lua"
-	lua_type = lua_type or ".lc"
 
 	local ret, magic = false, false
 	if nil == clientID then
@@ -191,7 +199,23 @@ local function domain()
 	end
 
 -- do we want to actually print messages?
-	if nil == print_log    then print_log    = false end
+	if nil == print_log then
+		if nil == log_pin then
+			print_log = false
+		else
+			gpio.mode (log_pin, gpio.INPUT, gpio.PULLUP)
+			if 0 == gpio.read (log_pin) then
+				print_log = true
+			else
+				print_log = false
+			end
+		end
+	end
+
+-- see save.lua for the meaning of these numers:
+	local code, reason, cause = node.bootreason()
+	Log ("code %d reason %d cause %d", code, reason, cause or 99)
+
 	if nil == print_stats  then print_stats  = false end	-- memory usage
 	if nil == print_dofile then print_dofile = false end	-- dofile() time
 	if nil == print_trace  then print_trace  = false end
@@ -227,15 +251,19 @@ local function domain()
 
 -- some timing defaults
 	if fast_dsleep then
-		wakeup_delay = wakeup_delay or   1300	-- 1.3ms to enter dsleep fast
+		dsleep_delay = fast_dsleep_delay or   1300	-- time to sleep with node.dsleep(,,1)
 	else
-		wakeup_delay = wakeup_delay or 105000	-- time to enter with node.dsleep
+		dsleep_delay = slow_dsleep_delay or 105000	-- time to sleep with node.dsleep(,,0)
 	end
-	dsleep_delay = dsleep_delay or  70000		-- 70ms unaccounted wakeup time
+	wakeup_delay = wakeup_delay or  70000		-- 70ms unaccounted wakeup time
 
 	rtc_rate = rtc_rate or 1.0			-- tmr/time
-	sleep_time = sleep_time or 60			-- seconds
-	sleep_time = sleep_time * 1000000		-- tmr
+
+	sleep_time = sleep_time or 60			-- cycle length, seconds
+-- how often to do WiFi RFCAL
+--	rfcal_rate = rfcal_rate or 10
+	rfcal_rate = rfcal_rate or (3600/sleep_time+1)	-- once an hour
+	sleep_time = sleep_time * 1000000		-- us
 
 -- when running in adc mode, do one vdd read every vddNextTime.
 -- it is done with no wifi, and means an extra restart.

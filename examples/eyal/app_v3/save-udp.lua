@@ -6,7 +6,7 @@ out_bleep()
 
 local conn = net.createUDPSocket()
 if nil == conn then
-	Trace(1)
+	Trace (1)
 	Log ("net.createUDPSocket failed")
 	Log ("message='%s'", message)
 	message = nil
@@ -15,21 +15,21 @@ else
 	local timeout = tmr.create()
 	timeout:alarm(save_udp_timeout, tmr.ALARM_SINGLE, function()
 		Log("send timeout")
-		Trace(4)
+		Trace (4)
 		doSleep()
 	end)
 
 	Log ("send  to '%s:%d' '%s'", saveServer, savePort, message)
 	conn:send(savePort, saveServer, message, function(client)
 		grace_time = tmr.now() + udp_grace_ms*1000
-		Trace(2)
+		Trace (2)
 		timeout:unregister()
 		Log ("sent")
 		message = nil
 
 		client:close()
 		conn = nil
-		Trace(3)
+		Trace (3)
 		doSleep()
 	end)
 end

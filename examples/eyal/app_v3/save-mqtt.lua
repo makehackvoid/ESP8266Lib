@@ -9,20 +9,20 @@ local topic = ("stats/%s/message"):format(mqtt_client)
 
 local mqttClient = mqtt.Client(mqtt_client, 2)
 if nil == mqttClient then
-	Trace(6)
+	Trace (6)
 	Log ("mqtt.Client failed")
 	message = nil
 	doSleep()
 else
 	mqttClient:connect (saveServer, savePort, 0,
 		function(client)		-- connected
-			Trace(1)
+			Trace (1)
 			mqttClient:publish (topic, message, 0, 1, function (client)
-				Trace(2)
+				Trace (2)
 				message = nil
 				client:close()
 				mqttClient = nil
-				Trace(3)
+				Trace (3)
 				doSleep()
 			end)
 		end,
@@ -40,13 +40,13 @@ mqtt.CONNACK_REFUSED_SERVER_UNAVAILABLE	3	The server is unavailable.
 mqtt.CONNACK_REFUSED_BAD_USER_OR_PASS	4	The broker refused the specified username or password.
 mqtt.CONNACK_REFUSED_NOT_AUTHORIZED	5	The username is not authorized.
 --]]
-			Trace(4)
+			Trace (4)
 			Log ("mqtt:connect failed %d", reason)
 			Log ("message='%s'", message)
 			message = nil
 			client:close()
 			mqttClient = nil
-			Trace(5)
+			Trace (5)
 			doSleep()
 		end)
 end

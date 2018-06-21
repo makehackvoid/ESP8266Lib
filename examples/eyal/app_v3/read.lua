@@ -58,10 +58,10 @@ local function read_ds18b20()
 	start_dofile = tmr.now()
 	local t = require ("ds18b20")
 	if not t then
-		Trace(1)
+		Trace (1)
 		Log("required ds18b20 failed")
 		no_ow()
-		incrementCounter(rtca_failRead)
+		incrementCounter(RfailRead)
 		return false
 	end
 	local tm = tmr.now()
@@ -70,10 +70,10 @@ local function read_ds18b20()
 	time_read = time_read + (tm - start_dofile)	-- adjust time
 
 	if not t.setup (ow_pin) then
-		Trace(2)
+		Trace (2)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
 		no_ow()
-		incrementCounter(rtca_failRead)
+		incrementCounter(RfailRead)
 		return false
 	end
 
@@ -81,7 +81,7 @@ local function read_ds18b20()
 		ow_addr = t.addrs()
 		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
-			incrementCounter(rtca_failRead)
+			incrementCounter(RfailRead)
 			return false
 		end
 	end
@@ -90,37 +90,41 @@ local good = 0
 	for n = 1,#ow_addr do
 		local tC = t.read(ow_addr[n])
 		if tC == nil then
-			Trace(3)
+			Trace (3)
 			tC = 86
-			incrementCounter(rtca_failRead)
+			incrementCounter(RfailRead)
 		else
 			good = good + 1
 			if tC == "85.0" then
 				tC = 87
-				incrementCounter(rtca_failRead)
+				incrementCounter(RfailRead)
 			elseif  tC == 127.9375 then
 				tC = 88
-				incrementCounter(rtca_failRead)
+				incrementCounter(RfailRead)
 			end
 		end
 		temp[#temp+1] = tC
 		Log("read[%d]=%.4f", #temp, tC)
 	end
-Trace(6+good)
+Trace (7+good)
 	return true
 ---- save memory ----
 --	Log ("%s is disabled", device) return false
 end
 
 local function read_bme280(device)
---[[ save memory ----
+---- save memory ----
 	out_bleep()
+	if not bme280 then
+		Log ("no bme280 support")
+		return false
+	end
 	if not have_i2c(device) then
 		return false
 	end
 	local speed = i2c.setup(0, i2c_SDA, i2c_SCL, i2c.SLOW)
 	if 0 == speed then
-		Trace(6)
+		Trace (6)
 		Log ("i2c.setup failed")
 		return false
 	end
@@ -130,7 +134,7 @@ local function read_bme280(device)
 		-- 0			inactive_duration (not used)
 		-- 0			Filter off
 	if nil == dev or 0 == dev then
-		Trace(4)
+		Trace (4)
 		Log ("bme280.setup failed")
 		return false
 	end
@@ -154,7 +158,7 @@ local function read_bme280(device)
 	if nil == P then P = 999*1000 failed = failed + 2 end
 	if nil == H then H =   0*1000 failed = failed + 4 end
 	if failed > 0 then
-		Trace(5)
+		Trace (5)
 		Log ("bme280.read failed %d", failed)
 	end
 
@@ -170,12 +174,12 @@ local function read_bme280(device)
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 	return true
----- save memory --]]
-	Log ("%s is disabled", device) return false
+---- save memory ----
+--	Log ("%s is disabled", device) return false
 end
 
 local function read_ds3231(device)
---[[ save memory ----
+---- save memory ----
 	if not have_i2c(device) then
 		return false
 	end
@@ -205,7 +209,7 @@ local function read_ds3231(device)
 	ds3231, package.loaded["ds3231"] = nil, nil
 
 	return ret
----- save memory --]]
+---- save memory ----
 	Log ("%s is disabled", device) return false
 end
 

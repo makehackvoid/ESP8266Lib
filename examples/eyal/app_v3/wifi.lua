@@ -9,16 +9,18 @@ local function Trace(n, new) mTrace(5, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
+local wifi = wifi
 local sta = wifi.sta
 local eventmon = wifi.eventmon
 local timeout = tmr.create()
+local toggled = false
 
 local function cleanup()
 	timeout:unregister()
-	eventmon.unregister(eventmon.STA_CONNECTED)
 	eventmon.unregister(eventmon.STA_GOT_IP)
 	eventmon.unregister(eventmon.STA_DISCONNECTED)
 --[[
+	eventmon.unregister(eventmon.STA_CONNECTED)
 	eventmon.unregister(eventmon.STA_AUTHMODE_CHANGE)
 	eventmon.unregister(eventmon.STA_DHCP_TIMEOUT)
 --]]
@@ -26,13 +28,13 @@ end
 
 local function give_up()
 	cleanup()
-	incrementCounter(rtca_failHard)
+	incrementCounter(RfailHard)
 --[[	-- count this failed cycle?
 	if have_rtc_mem then
 		if nil == runCount then
-			incrementCounter(rtca_runCount)
+			incrementCounter(RrunCount)
 		else
-			rtcmem.write32(rtca_runCount, runCount)
+			rtcmem.write32(RrunCount, runCount)
 		end
 	end
 --]]
@@ -42,55 +44,95 @@ end
 
 local retry_count = 0
 
+local function dummy()
+end
+
 local function retry()
-	Trace(2)
+	Trace (2)
+	if retry_count >= wifi_retry_max or wifi_retry_timeout <= 0 then	-- no more retry
+		Trace (9)
+		give_up()
+		return
+	end
+	retry_count = retry_count + 1
+
+	tmr.wdclr()
+if true then
+	toggled = true
+Log ("suspend WiFi")
+	wifi.suspend({50000, dummy, dummy, true})	-- toggle for 1ms
+else
+	Log ("reset WiFi, state=%d", wifi.suspend())
+	if 1 == wifi.suspend() then
+Log ("resume WiFi")
+		toggled = true
+		wifi.resume(dummy)
+	else
+		toggled = true
+Log ("suspend WiFi")
+		wifi.suspend({50000, dummy, dummy, true})	-- toggle for 1ms
+	end
+Log ("reseted WiFi")
+end
+end
+
+local function retry_old()
+	Trace (2)
+	if retry_count >= wifi_retry_max or wifi_retry_timeout <= 0 then	-- no more retry
+		Trace (9)
+		give_up()
+		return
+	end
+	retry_count = retry_count + 1
+
 	Log ("reset WiFi")
 	local changed = false
 	sta.disconnect()
 	local ip, nm, gw = sta.getip()
 	if not ip or ip ~= clientIP or not gw or gw ~= netGW then
-		Trace(7, true)
+		Trace (7, true)
 		changed = true
 	end
 	sta.setip({ip=clientIP,netmask=netMask,gateway=netGW})	-- always set
 
 	local cssid, cpass = sta.getconfig()
 	if not cssid or cssid ~= ssid or not cpass or cpass ~= passphrase then
-		Trace(8, true)
+		Trace (8, true)
 		changed = true
 	end
 	wifi.setmode(wifi.STATION)	-- always set
 	sta.config({ssid = ssid, pwd = passphrase, save = true, auto = true})
 
-	if not changed then		-- no change, do not retry
---	if retry_count >= 2 then	-- already tried twice
-		Trace(9)
-		give_up()
-		return
-	end
-	retry_count = retry_count + 1
+	-- retry even if no change...
 
-	timeout:alarm(wifi_timeout, tmr.ALARM_SINGLE, function()
-		Trace(3)
-		Log("connection timeout again, status=%d", sta.status())
-		give_up()
+	Log("set retry wifi timeout %dms", wifi_retry_timeout)
+	timeout:alarm(wifi_retry_timeout, tmr.ALARM_SINGLE, function()
+		Trace (3)
+		Log("reconnection timeout again, status=%d", sta.status())
+		retry()
 	end)
 end
 
-local function have_connection(ip)
-	time_wifi = tmr.now() - time_wifi
+local function have_connection(t, msg)
+	time_wifi_ready = tmr.now()
+	time_wifi = time_wifi_ready - time_wifi
+	Trace (t)
 	cleanup()
-	Log ("WiFi available after %.6f seconds, ip=%s",
-		time_wifi/1000000, ip)
+	Log("%s after %.6f seconds, ip=%s status=%d channel=%d",
+		msg,
+		time_wifi/1000000,
+		(sta.getip() or "none"),
+		sta.status(),
+		wifi.getchannel())
 	if retry_count > 0 then
-		incrementCounter(rtca_failSoft)
+		incrementCounter(RfailSoft)
 	end
 	if nil == runCount then
 		if newRun then
 			do_file ("first")
 			return
 		else
-			runCount = incrementCounter(rtca_runCount)
+			runCount = incrementCounter(RrunCount)
 		end
 	end
 	time_First = 0
@@ -98,36 +140,19 @@ local function have_connection(ip)
 end
 
 local function dowifi()
-	Trace(1)
+	Trace (1)
 	tmr.wdclr()
 	-- main.lua ensures ip is set
-	eventmon.register(eventmon.STA_CONNECTED, function(T)
-		Trace(4)
-		local ip = sta.getip()
-		Log("CONNECTED as %s status=%d channel=%d", ip, sta.status(), T.channel)
---		have_connection(ip)
-	end)
-
-	if wifi.STA_GOTIP == sta.status() then
-		Trace(5)
-		local ip = sta.getip()
-		Log("had wifi  as %s status=%d", (ip or "none"), wifi.STA_GOTIP)
-		have_connection(ip)
-		return
-	end
-
-	timeout:alarm(wifi_timeout, tmr.ALARM_SINGLE, function()
-		Log("connection timeout, status=%d", sta.status())
-		retry()
-	end)
 
 	eventmon.register(eventmon.STA_GOT_IP, function(T)
-		Trace(6)
-		Log("GOT_IP '%s'", T.IP)
-		have_connection(T.IP)
+		have_connection(6, "GOT_IP")
 	end)
 
 --[[
+	eventmon.register(eventmon.STA_CONNECTED, function(T)
+		have_connection(4, "CONNECTED")
+	end)
+
 	eventmon.register(eventmon.STA_DISCONNECTED, function(T)
 		Log("DISCONNECTED reason %d", T.reason)
 		retry()
@@ -141,7 +166,32 @@ local function dowifi()
 
 	eventmon.register(eventmon.STA_DHCP_TIMEOUT, function(T)
 		Log("STA_DHCP_TIMEOUT")
+		retry()
 	end)
+
+	-- in case we were too late and missed the STA_GOT_IP event
+	if wifi.STA_GOTIP == sta.status() then
+		have_connection(5, "had IP")
+		return
+	end
+
+	if wifi_first_timeout > 0 then
+		Log("set main  wifi timeout %dms", wifi_first_timeout)
+		timeout:alarm(wifi_first_timeout, tmr.ALARM_SINGLE, function()
+			Log("connection timeout, status=%d", sta.status())
+			retry()
+		end)
+	else
+		eventmon.register(eventmon.STA_DISCONNECTED, function(T)
+			Log("DISCONNECTED reason %d", T.reason)
+			if toggled then
+				toggled = false
+			else
+				retry()
+			end
+		end)
+	end
+
 end
 
 dowifi()

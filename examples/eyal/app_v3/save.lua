@@ -2,6 +2,7 @@ local tmr = tmr
 local time_Save = done_file (tmr.now())
 local mLog = mLog
 local sta = wifi.sta
+local Rr = rtcmem.read32
 local function Log (...) if print_log then mLog ("save", unpack(arg)) end end
 local function Trace(n, new) mTrace(7, n, new) end Trace (0, true)
 used ()
@@ -11,13 +12,13 @@ local function format_message()
 	local failSoft, failHard, failRead, timeLast, timeTotal, timeLeft
 		= 0, 0, 0, 0, 0, 0
 	if have_rtc_mem then
-		failSoft  = rtcmem.read32(rtca_failSoft)	-- count
-		failHard  = rtcmem.read32(rtca_failHard)	-- count
-		failRead  = rtcmem.read32(rtca_failRead)	-- count
+		failSoft  = Rr(RfailSoft)	-- count
+		failHard  = Rr(RfailHard)	-- count
+		failRead  = Rr(RfailRead)	-- count
 		-- data from prev cycle:
-		timeLast  = rtcmem.read32(rtca_lastTime)	-- us
-		timeTotal = rtcmem.read32(rtca_totalTime)	-- ms
-		timeLeft  = rtcmem.read32(rtca_timeLeft)	-- us
+		timeLast  = Rr(RlastTime)	-- us
+		timeTotal = Rr(RtotalTime)	-- ms
+		timeLeft  = Rr(RtimeLeft)	-- us
 		-- also last_trace
 	end
 
@@ -28,10 +29,11 @@ local function format_message()
 	if send_times then
 		time_Save = tmr.now() - time_Save
 		times = 
-(" times=s%.3f,u%.3f,r%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f prev=L%.3f,l%.3f,T%d,t%x%08x"):format(
+(" times=s%.3f,u%.3f,r%.3f,W%.3f,w%.3f,F%.3f,S%.3f,d%.3f,t%.3f prev=L%.3f,l%.3f,T%d,t%x%08x"):format(
 			time_start / 1000000,
 			time_setup / 1000000,
 			time_read / 1000000,
+			(time_wifi_ready - time_start) / 1000000,
 			time_wifi / 1000000,
 			time_First / 1000000,
 			time_Save / 1000000,
@@ -82,12 +84,61 @@ enum rst_reason {
 	REASON_DEEP_SLEEP_AWAKE = 5, // wake up from deep-sleep 
 	REASON_EXT_SYS_RST      = 6, // external system reset
 };
-code = rtc_get_reset_reason();
+
+from esp-open-sdk/xtensa-lx106-elf/xtensa-lx106-elf/sysroot/usr/include/xtensa/corebits.h
+/*
+ *  General Exception Causes
+ *  (values of EXCCAUSE special register set by general exceptions,
+ *   which vector to the user, kernel, or double-exception vectors).
+ */
+#define EXCCAUSE_ILLEGAL		0	/* Illegal Instruction */
+#define EXCCAUSE_SYSCALL		1	/* System Call (SYSCALL instruction) */
+#define EXCCAUSE_INSTR_ERROR		2	/* Instruction Fetch Error */
+#define EXCCAUSE_LOAD_STORE_ERROR	3	/* Load Store Error */
+#define EXCCAUSE_LEVEL1_INTERRUPT	4	/* Level 1 Interrupt */
+#define EXCCAUSE_ALLOCA			5	/* Stack Extension Assist (MOVSP instruction) for alloca */
+#define EXCCAUSE_DIVIDE_BY_ZERO		6	/* Integer Divide by Zero */
+#define EXCCAUSE_SPECULATION		7	/* Use of Failed Speculative Access (not implemented) */
+#define EXCCAUSE_PRIVILEGED		8	/* Privileged Instruction */
+#define EXCCAUSE_UNALIGNED		9	/* Unaligned Load or Store */
+/* Reserved				10..11 */
+#define EXCCAUSE_INSTR_DATA_ERROR	12	/* PIF Data Error on Instruction Fetch (RB-200x and later) */
+#define EXCCAUSE_LOAD_STORE_DATA_ERROR	13	/* PIF Data Error on Load or Store (RB-200x and later) */
+#define EXCCAUSE_INSTR_ADDR_ERROR	14	/* PIF Address Error on Instruction Fetch (RB-200x and later) */
+#define EXCCAUSE_LOAD_STORE_ADDR_ERROR	15	/* PIF Address Error on Load or Store (RB-200x and later) */
+#define EXCCAUSE_ITLB_MISS		16	/* ITLB Miss (no ITLB entry matches, hw refill also missed) */
+#define EXCCAUSE_ITLB_MULTIHIT		17	/* ITLB Multihit (multiple ITLB entries match) */
+#define EXCCAUSE_INSTR_RING		18	/* Ring Privilege Violation on Instruction Fetch */
+/* Reserved				19 */	/* Size Restriction on IFetch (not implemented) */
+#define EXCCAUSE_INSTR_PROHIBITED	20	/* Cache Attribute does not allow Instruction Fetch */
+/* Reserved				21..23 */
+#define EXCCAUSE_DTLB_MISS		24	/* DTLB Miss (no DTLB entry matches, hw refill also missed) */
+#define EXCCAUSE_DTLB_MULTIHIT		25	/* DTLB Multihit (multiple DTLB entries match) */
+#define EXCCAUSE_LOAD_STORE_RING	26	/* Ring Privilege Violation on Load or Store */
+/* Reserved				27 */	/* Size Restriction on Load/Store (not implemented) */
+#define EXCCAUSE_LOAD_PROHIBITED	28	/* Cache Attribute does not allow Load */
+#define EXCCAUSE_STORE_PROHIBITED	29	/* Cache Attribute does not allow Store */
+/* Reserved				30..31 */
+#define EXCCAUSE_CP_DISABLED(n)		(32+(n))	/* Access to Coprocessor 'n' when disabled */
+#define EXCCAUSE_CP0_DISABLED		32	/* Access to Coprocessor 0 when disabled */
+#define EXCCAUSE_CP1_DISABLED		33	/* Access to Coprocessor 1 when disabled */
+#define EXCCAUSE_CP2_DISABLED		34	/* Access to Coprocessor 2 when disabled */
+#define EXCCAUSE_CP3_DISABLED		35	/* Access to Coprocessor 3 when disabled */
+#define EXCCAUSE_CP4_DISABLED		36	/* Access to Coprocessor 4 when disabled */
+#define EXCCAUSE_CP5_DISABLED		37	/* Access to Coprocessor 5 when disabled */
+#define EXCCAUSE_CP6_DISABLED		38	/* Access to Coprocessor 6 when disabled */
+#define EXCCAUSE_CP7_DISABLED		39	/* Access to Coprocessor 7 when disabled */
+/*#define EXCCAUSE_FLOATING_POINT	40*/	/* Floating Point Exception (not implemented) */
+/* Reserved				40..63 */
+
+code   = rtc_get_reset_reason();
 reason = ri.reason;
+cause  = ri.exccause;
 --]]
-			local code, reason = node.bootreason()
-			reasons = (",c%d,r%d"):format(
-				code, reason)
+			local code, reason, cause = node.bootreason()
+			reasons = (",c%d,r%d,C%02d"):format(
+				code, reason,
+				cause or 99)
 		end
 
 		local mems = ""
@@ -126,7 +177,7 @@ Log ("reading adc")
 		else
 			vbat = adc.read(0)*adc_factor
 		end
-		vdd33 = rtcmem.read32(rtca_vddLastRead)
+		vdd33 = Rr(RvddLastRead)
 	else
 		vbat = 0			-- dummy
 		vdd33 = adc.readvdd33()*vdd_factor
@@ -160,32 +211,32 @@ Log ("reading adc")
 end
 
 if have_rtc_mem then
-	rtcmem.write32(rtca_runCount, runCount)
+	rtcmem.write32(RrunCount, runCount)
 end
 
 message = format_message()
 format_message = nil
 
 if not do_Save then
-	Trace(1)
+	Trace (1)
 	print_log = true
 	Log (message)
 	message = nil
 	doSleep()
 elseif "udp" == save_proto then
-	Trace(2)
+	Trace (2)
 	do_file("save-udp")
 elseif "tcp" == save_proto then
-	Trace(3)
+	Trace (3)
 	do_file("save-tcp")
 elseif "mqtt" == save_proto then
-	Trace(4)
+	Trace (4)
 	do_file("save-mqtt")
 else
-	Trace(5)
+	Trace (5)
 	pgm = ("save-%s"):format(save_proto)
 	if not pcall (function() do_file(pgm, true) end) then
-		Trace(6)
+		Trace (6)
 		Log ("missing or failing '%s'", pgm)
 		Log ("message='%s'", message)
 		message = nil

@@ -6,14 +6,14 @@ out_bleep()
 
 local conn = net.createConnection(net.TCP, 0)
 if nil == conn then
-	Trace(5)
+	Trace (5)
 	Log ("net.createConnection failed")
 	Log ("message='%s'", message)
 	message = nil
 	doSleep()
 else
 	conn:on("disconnection", function(client)
-		Trace(4)
+		Trace (4)
 		tmr.stop(1)
 		Log ("disconnected")
 
@@ -22,12 +22,12 @@ else
 	end)
 
 	conn:on("sent", function(client)
-		Trace(2)
+		Trace (2)
 		Log ("sent")
 	end)
 
 	conn:on("connection", function(client)
-		Trace(1)
+		Trace (1)
 		Log ("connected")
 
 		Log ("send '%s'", message)
@@ -38,7 +38,7 @@ else
 	Log("connecting to %s:%d", saveServer, savePort)
 	tmr.alarm(1, save_tcp_timeout, tmr.ALARM_SINGLE, function()
 		Log("send timeout")
-		Trace(6)
+		Trace (6)
 		conn = nil
 		message = nil
 		doSleep()
