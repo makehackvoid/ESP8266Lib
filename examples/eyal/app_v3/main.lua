@@ -5,6 +5,7 @@ local function Trace(n, new) mTrace(3, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
+local wifi = wifi
 local sta = wifi.sta
 local Rr = rtcmem.read32
 local Rw = rtcmem.write32
@@ -16,7 +17,7 @@ local function setup_rtcmem()
 		newRun = true	-- always fetch runCount from server
 		return true
 	end
-	rtc_magic        = rtc_magic        or 0x6adadad0	-- keep below 0x80000000
+	rtc_magic        = rtc_magic        or 0x6adadad1	-- keep below 0x80000000
 	Rmagic       = Rmagic       or 127		-- last slot
 	RrunCount    = RrunCount    or (Rmagic -  1)
 	RfailSoft    = RfailSoft    or (Rmagic -  2)
@@ -30,8 +31,9 @@ local function setup_rtcmem()
 	RvddNextTime = RvddNextTime or (Rmagic - 10)	-- ms to next vdd read
 	RvddLastRead = RvddLastRead or (Rmagic - 11)
 	RvddAdjTime  = RvddAdjTime  or (Rmagic - 12)
+	RfailTime    = RfailTime    or (Rmagic - 13)	-- unreported uptime
 
-	newRun = rtc_magic ~= Rr(Rmagic)
+	newRun = newRun or (rtc_magic ~= Rr(Rmagic))
 	if newRun then
 		Rw(RrunCount, 0)
 		Rw(RfailSoft, 0)
@@ -46,6 +48,7 @@ local function setup_rtcmem()
 		Rw(RvddNextTime, vddNextTime)
 		Rw(RvddLastRead, 3300)
 		Rw(RvddAdjTime, 0)
+		Rw(RfailTime, 0)
 		Rw(Rmagic, rtc_magic)
 		Log ("run initialized")
 	end
@@ -70,8 +73,9 @@ local function read_vdd()
 	-- update activity time stats
 	local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
 	Rw(RlastTime, thisTime)
-	local totalTime = Rr(RtotalTime)				-- ms
-	Rw(RtotalTime, totalTime + thisTime/1000)
+--	local totalTime = Rr(RtotalTime)				-- ms
+--	Rw(RtotalTime, totalTime + thisTime/1000)
+	Ri(RtotalTime, thisTime/1000)
 
 	-- sleep for how long?
 	adjTime = adjTime - thisTime
@@ -84,6 +88,7 @@ local function read_vdd()
 end
 
 local function wifi_setup()
+	connected = false
 	if not do_WiFi then return true end
 
 -- your access point details
@@ -108,13 +113,19 @@ local function wifi_setup()
 	save_proto = save_proto or "udp"	-- "udp", "tcp" or "mqtt"
 
 -- how many ms to wait before aborting a wifi operation
-	wifi_first_timeout = wifi_first_timeout or 3000	-- waiting for wifi
-	wifi_retry_timeout = wifi_retry_timeout or 3000	-- waiting for wifi retry
-	wifi_retry_max     = wifi_retry_max     or    1	-- times to retry
+	wifi_timeout       = wifi_timeout       or 6000	-- 6s
+	wifi_retry_max     = wifi_retry_max     or    0	-- times to retry (default none)
 	first_timeout      = first_timeout      or 4000	-- waiting for 'first' response
 	save_udp_timeout   = save_udp_timeout   or 5000
 	save_tcp_timeout   = save_tcp_timeout   or 5000
 	save_mqtt_timeout  = save_mqtt_timeout  or 5000
+
+-- yield time to allow wifi to make a connection
+	if not read_delay then
+		read_delay = 1
+	elseif read_delay < 1 then
+		read_delay = 1
+	end
 
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
 	if "udp" == save_proto then
@@ -132,9 +143,10 @@ if wifi.getcountry and wifi.setcountry then
 	if nil == country then
 		country = "AU"
 	end
-	if country ~= wifi.getcountry().country then
-		wifi.setcountry({country=country, start_ch=1, end_ch=11, policy=wifi.COUNTRY_AUTO})
-		Log ("wifi.country set to '%s' channels [1,11]", country)
+	local country_old = wifi.getcountry().country
+	if country ~= country_old then
+		wifi.setcountry({country=country, start_ch=6, end_ch=11, policy=wifi.COUNTRY_MANUAL}) -- .COUNTRY_AUTO or .COUNTRY_MANUAL
+		Log ("wifi.country set to '%s' (was '%s') channels [6,11]", country, (country_old or "--"))
 	end
 end
 
@@ -251,7 +263,7 @@ local function domain()
 
 -- some timing defaults
 	if fast_dsleep then
-		dsleep_delay = fast_dsleep_delay or   1300	-- time to sleep with node.dsleep(,,1)
+		dsleep_delay = fast_dsleep_delay or   3000	-- time to sleep with node.dsleep(,,1)
 	else
 		dsleep_delay = slow_dsleep_delay or 105000	-- time to sleep with node.dsleep(,,0)
 	end
@@ -290,9 +302,11 @@ local function domain()
 		return false
 	end
 
--- if you want to restart counting then set the new staring value
--- before starting a run with 'dofile("init.lua")'
---	runCount = nnn
+-- if you want to restart counting then set the new value (nnn) before starting:
+--	runCount = nnn dofile("init.lua")
+-- or, to clear all rtc registers:
+--	newRun = true dofile("init.lua")
+-- or both
 
 -- DEBUG: do we want to enable WiFi, to allow publishing the readings?
 	if nil == do_WiFi then do_WiFi = true end

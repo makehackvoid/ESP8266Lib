@@ -147,10 +147,6 @@ function safe_dsleep(us, mode)
 end
 
 function restart_really(time_left)
-	if disconnect and wifi.STA_IDLE ~= wifi.sta.status() then
-		wifi.sta.disconnect()
-	end
-
 --	if dsleep ~= node.dsleep and ow_pin then
 --		gpio.mode (ow_pin, gpio.INPUT, gpio.PULLUP)
 --	end
@@ -177,8 +173,7 @@ function restart_really(time_left)
 --		rtctime.dsleep_aligned ((sleep_time+wakeup_delay)*rtc_rate, 0, rf_mode)
 		safe_dsleep (time_left, rf_mode)
 	else
-		Log("doing dsleep(1) for restart")
-print("doing dsleep(1) for restart\n")
+		Log("doing dsleep(1) for restart, runCount=%d", (runCount or 0))
 		safe_dsleep (1, rf_mode)
 	end
 end
@@ -187,8 +182,13 @@ function restart(time_left)
 	if have_rtc_mem then
 		local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
 		Rw(RlastTime, thisTime)					-- us
-		local totalTime = Rr(RtotalTime)				-- ms
-		Rw(RtotalTime, totalTime + thisTime/1000)		-- ms
+--		local totalTime = Rr(RtotalTime)			-- ms
+--		Rw(RtotalTime, totalTime + (thisTime+500)/1000)		-- ms
+		Ri(RtotalTime, (thisTime+500)/1000)			-- ms
+		if not connected then			-- tally unreported uptime
+--			Rw(RfailTime, Rr(RfailTime) + (Rr(RlastTime)+500/1000)	-- ms
+			Ri(RfailTime, (Rr(RlastTime)+500)/1000)		-- ms
+		end
 		Rw(RtimeLeft, (time_left or 0))				-- us
 
 		if adc_factor and vddNextTime > 0 then
@@ -198,7 +198,7 @@ function restart(time_left)
 				t/1000000, sleep_time/1000000, l/1000000)
 			if t > sleep_time then
 				t = t - l
-				Rw(RvddNextTime, t/1000)		-- us -> ms
+				Rw(RvddNextTime, (t+500)/1000)		-- us -> ms
 				Log ("time to next vdd read: %.6f", t/1000000)
 			else
 				Rw(RvddNextTime, vddNextTime)		-- ms
@@ -219,10 +219,10 @@ function restart(time_left)
 	end
 
 	local t_delay = 0
-	if grace_time then
+	if connected and grace_time then
 		local t_grace = tmr.now()
 		if t_grace < grace_time then
-			t_delay = (grace_time - t_grace)/1000
+			t_delay = (grace_time - t_grace +500)/1000
 			Log("grace delay %.3f", t_delay)
 			time_left = time_left - t_delay*1000
 		else
@@ -262,7 +262,7 @@ function doSleep ()
 			restart (0)
 		end
 	elseif sleep_time < 0 then			-- wait requested
-		time_left = (-sleep_time - sleep_start) / 1000
+		time_left = (-sleep_time - sleep_start +500) / 1000
 		if time_left <= 0 then
 			Log("restart now\n")
 			Trace (3, true)
@@ -282,11 +282,12 @@ function doSleep ()
 	end
 end
 
-function incrementCounter(address)
-	if not have_rtc_mem then return 1 end
+function Ri(address, increment)		-- was incrementCounter
+	if not increment then increment = 1 end
+	if not have_rtc_mem then return increment end
 
 	local count = Rr(address)
-	if count ~= 0xffffffff then count = count + 1 end
+	if count ~= 0xffffffff then count = count + increment end
 	Rw(address, count)
 	return count
 end

@@ -29,7 +29,4 @@ read_device   = read_device   or "ds18b20"
 ow_pin        = ow_pin        or gpio4
 ow_addr       = ow_addr       or {""}	-- autodetect
 
-fast_dsleep_delay  = fast_dsleep_delay  or 3000	-- 3ms
-wifi_first_timeout = wifi_first_timeout or    0	-- s, 0=no timeout
-wifi_retry_timeout = wifi_retry_timeout or    0	-- 0=no retry
 

@@ -14,6 +14,7 @@ local function have_first()
 end
 
 if "mqtt" == save_proto then
+--[[ disabled for 512k modules
 	local mqtt_client = string.gsub(string.lower(wifi.sta.getmac()),":","-")
 	local mqttClient = mqtt.Client(mqtt_client, 2)
 	mqttClient:on ("offline", function(client)
@@ -56,6 +57,12 @@ if "mqtt" == save_proto then
 		have_first()
 	end)
 	mqttClient:connect (saveServer, savePort, 0)
+--]]
+	Log("no mqtt")
+	Trace (13)
+	runCount = 1
+	have_first()
+----
 elseif "tcp" == save_proto or "udp" == save_proto then
 	local conn = net.createConnection(net.TCP, 0)
 

@@ -9,6 +9,10 @@ local function Trace(n, new) mTrace(4, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
+local next_read
+local timer = tmr.create()
+temp = {}
+
 local function no_ow()
 	for n = 1,#ow_addr do
 		temp[#temp+1] = 85
@@ -40,29 +44,34 @@ local function have_i2c(device_name)
 		Log ("no i2c module for %s", device_name)
 		return false
 	end
-	return have_pin(i2c_SDA, "SDA", device_name) and
-	   have_pin(i2c_SCL, "SCL", device_name)
+	return	have_pin(i2c_SDA, "SDA", device_name) and
+		have_pin(i2c_SCL, "SCL", device_name)
 end
 
-local function read_ds18b20()
+local read_ds18b20_stage = 0
+local t
+local good
+
+local function read_ds18b20(dev, n)
 ---- save memory ----
+    if 1 == read_ds18b20_stage then	-- first time
 	if not have_ow(device) then
-		return false
+		read_ds18b20_stage = -1 return false
 	end
 	if #ow_addr < 1 then
 		Log ("no ow devices configured")
-		return false
+		read_ds18b20_stage = -1 return false
 	end
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
 	start_dofile = tmr.now()
-	local t = require ("ds18b20")
+	t = require ("ds18b20")
 	if not t then
 		Trace (1)
 		Log("required ds18b20 failed")
 		no_ow()
-		incrementCounter(RfailRead)
-		return false
+		Ri(RfailRead)
+		read_ds18b20_stage = -1 return false
 	end
 	local tm = tmr.now()
 	done_file (tm)
@@ -73,43 +82,55 @@ local function read_ds18b20()
 		Trace (2)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
 		no_ow()
-		incrementCounter(RfailRead)
-		return false
+		Ri(RfailRead)
+		read_ds18b20_stage = -1 return false
 	end
 
 	if "" == ow_addr[1] then
 		ow_addr = t.addrs()
 		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
-			incrementCounter(RfailRead)
-			return false
+			Ri(RfailRead)
+			read_ds18b20_stage = -1 return false
 		end
 	end
 
-local good = 0
-	for n = 1,#ow_addr do
-		local tC = t.read(ow_addr[n])
-		if tC == nil then
-			Trace (3)
-			tC = 86
-			incrementCounter(RfailRead)
-		else
-			good = good + 1
-			if tC == "85.0" then
-				tC = 87
-				incrementCounter(RfailRead)
-			elseif  tC == 127.9375 then
-				tC = 88
-				incrementCounter(RfailRead)
-			end
+	good = 0
+    end
+
+	local tC = t.read(ow_addr[read_ds18b20_stage])
+	if tC == nil then
+		Trace (3)
+		tC = 86
+		Ri(RfailRead)
+	else
+		good = good + 1
+		if tC == "85.0" then
+			tC = 87
+			Ri(RfailRead)
+		elseif  tC == 127.9375 then
+			tC = 88
+			Ri(RfailRead)
 		end
-		temp[#temp+1] = tC
-		Log("read[%d]=%.4f", #temp, tC)
 	end
-Trace (7+good)
+	temp[#temp+1] = tC
+	Log("read[%d]=%.4f", #temp, tC)
+
+	if read_ds18b20_stage >= #ow_addr then
+		if 7+good > 15 then good = 15 - 7 end	-- 15 is max allowed
+		Trace (7+good)
+		read_ds18b20_stage = -1
+		next_read (n)
+	else
+		read_ds18b20_stage = read_ds18b20_stage + 1
+		timer:alarm(read_delay, tmr.ALARM_SINGLE, function()
+			read_ds18b20 (dev, read_ds18b20_stage)
+		end)
+	end
 	return true
 ---- save memory ----
---	Log ("%s is disabled", device) return false
+--	Log ("%s is disabled", device)
+--	read_ds18b20_stage = -1 return false
 end
 
 local function read_bme280(device)
@@ -179,14 +200,14 @@ local function read_bme280(device)
 end
 
 local function read_ds3231(device)
----- save memory ----
+--[[ save memory ----
 	if not have_i2c(device) then
 		return false
 	end
 	if print_dofile then Log("calling ds3231") end
 	out_bleep()
 	start_dofile = tmr.now()
-	local t = require ("ds3231")
+	t = require ("ds3231")
 	if not t then
 		Log("required ds3231 failed")
 		return false
@@ -206,46 +227,21 @@ local function read_ds3231(device)
 		ret = false
 	end
 
-	ds3231, package.loaded["ds3231"] = nil, nil
-
 	return ret
----- save memory ----
+---- save memory --]]
 	Log ("%s is disabled", device) return false
 end
 
-temp = {}
+if not read_device then read_device = "" end
+local devices = {}
+for device in string.gmatch(read_device, "[^,]+") do
+	devices[#devices+1] = device
+end
 
-local function doread()
-	if not read_device then read_device = "" end
-	for device in string.gmatch(read_device, "[^,]+") do
-		Log ("reading '%s'", device)
-		if device == "ds18b20" then
-			read_ds18b20(device)	-- ignore failure
-			read_ds18b20 = nil
-			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
-			device = nil
-		end
-		if device == "bme280" then
-			read_bme280(device)	-- ignore failure
-			read_bme280 = nil
-			device = nil
-		end
-		if device == "ds3231" then
-			read_ds3231(device)	-- ignore failure
-			read_ds3231 = nil
-			device = nil
-		end
-		if device then
-			local pgm = ("read-%s"):format(device)
-			if not pcall (function() do_file(pgm, true) end) then
-				Log ("missing or failing '%s'", pgm)
-				-- ignore failure
-			end
-			device = nil
-		end
-	end
-
+local function done_read()
 	time_read = tmr.now() - time_read
+
+	timer:unregister()
 
 	if print_log and #temp > 0 then
 		local tCs = ""
@@ -260,5 +256,47 @@ local function doread()
 	if do_WiFi then do_file ("wifi") end
 end
 
-doread()
+local function device_read (n)
+	local device = devices[n]
+	Log ("reading '%s'", device)
+	if device == "ds18b20" and read_ds18b20_stage >= 0 then
+		read_ds18b20_stage = 1
+		read_ds18b20(device, n)	-- ignore failure
+		if -1 == read_ds18b20_stage then
+			read_ds18b20 = nil	-- all done
+			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
+		end
+		return
+	elseif device == "bme280" then
+		read_bme280(device)	-- ignore failure
+		read_bme280 = nil
+	elseif device == "ds3231" then
+		read_ds3231(device)	-- ignore failure
+		read_ds3231 = nil
+		t, ds3231, package.loaded["ds3231"] = nil, nil, nil
+	else
+		local pgm = ("read-%s"):format(device)
+		if not pcall (function() do_file(pgm, true) end) then
+			Log ("missing or failing '%s'", pgm)
+			-- ignore failure
+		end
+	end
+
+	next_read (n)
+end
+
+next_read = function (n)
+	if n >= #devices then
+		done_read()
+		return
+	end
+
+	timer:alarm(read_delay, tmr.ALARM_SINGLE, function()
+		device_read (n+1)
+	end)
+end
+
+Log ("read delay is %dms", read_delay)
+
+next_read (0)
 
