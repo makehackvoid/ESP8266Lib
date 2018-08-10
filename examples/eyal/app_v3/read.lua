@@ -52,7 +52,7 @@ local read_ds18b20_stage = 0
 local t
 local good
 
-local function read_ds18b20(dev, n)
+local function read_ds18b20(dev, ndevice)
 ---- save memory ----
     if 1 == read_ds18b20_stage then	-- first time
 	if not have_ow(device) then
@@ -120,11 +120,11 @@ local function read_ds18b20(dev, n)
 		if 7+good > 15 then good = 15 - 7 end	-- 15 is max allowed
 		Trace (7+good)
 		read_ds18b20_stage = -1
-		next_read (n)
+		next_read (ndevice)
 	else
 		read_ds18b20_stage = read_ds18b20_stage + 1
 		timer:alarm(read_delay, tmr.ALARM_SINGLE, function()
-			read_ds18b20 (dev, read_ds18b20_stage)
+			read_ds18b20 (dev, ndevice)
 		end)
 	end
 	return true
@@ -256,12 +256,12 @@ local function done_read()
 	if do_WiFi then do_file ("wifi") end
 end
 
-local function device_read (n)
-	local device = devices[n]
+local function device_read (ndevice)
+	local device = devices[ndevice]
 	Log ("reading '%s'", device)
 	if device == "ds18b20" and read_ds18b20_stage >= 0 then
 		read_ds18b20_stage = 1
-		read_ds18b20(device, n)	-- ignore failure
+		read_ds18b20(device, ndevice)	-- ignore failure
 		if -1 == read_ds18b20_stage then
 			read_ds18b20 = nil	-- all done
 			t, ds18b20, package.loaded["ds18b20"] = nil, nil, nil
@@ -282,17 +282,17 @@ local function device_read (n)
 		end
 	end
 
-	next_read (n)
+	next_read (ndevice)
 end
 
-next_read = function (n)
-	if n >= #devices then
+next_read = function (ndevice)
+	if ndevice >= #devices then
 		done_read()
 		return
 	end
 
 	timer:alarm(read_delay, tmr.ALARM_SINGLE, function()
-		device_read (n+1)
+		device_read (ndevice+1)
 	end)
 end
 
