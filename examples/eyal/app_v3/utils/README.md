@@ -43,3 +43,8 @@ upload.lua
 
 Wirelessly fetch a file from a web server (using http). It gets embedded into a larger script (`u.lc`) by pup.sh which is then uploaded and run on the esp.
 
+send.lua
+==
+
+Wirelessly download a file from the esp
+

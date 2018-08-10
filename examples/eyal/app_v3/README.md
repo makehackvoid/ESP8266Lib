@@ -94,10 +94,3 @@ The final act is to save the collected information. `save.lua` formats the messa
 
 `show.lua` display information about the esp and possibly the one-wire devices attached.
 
-### utils/
-Some utility programs
-
-`bootsrap.lua upload.lua` upload files to the esp over wifi (part of a small system)
-
-`send.lua` download a file from the esp over wifi
-
