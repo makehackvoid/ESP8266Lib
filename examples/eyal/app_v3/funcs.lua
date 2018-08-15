@@ -182,11 +182,8 @@ function restart(time_left)
 	if have_rtc_mem then
 		local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
 		Rw(RlastTime, thisTime)					-- us
---		local totalTime = Rr(RtotalTime)			-- ms
---		Rw(RtotalTime, totalTime + (thisTime+500)/1000)		-- ms
 		Ri(RtotalTime, (thisTime+500)/1000)			-- ms
 		if not connected then			-- tally unreported uptime
---			Rw(RfailTime, Rr(RfailTime) + (Rr(RlastTime)+500/1000)	-- ms
 			Ri(RfailTime, (Rr(RlastTime)+500)/1000)		-- ms
 		end
 		Rw(RtimeLeft, (time_left or 0))				-- us
@@ -203,7 +200,10 @@ function restart(time_left)
 			else
 				Rw(RvddNextTime, vddNextTime)		-- ms
 				adc.force_init_mode(adc.INIT_VDD33)
-				grace_time = grace_time + 43*1000	-- adc.force takes 43ms
+				local gt = tmr.now() + 43*1000		-- adc.force takes 43ms
+				if not grace_time or grace_time < gt then
+					grace_time = gt
+				end
 				do_vdd_read_cycle = true
 				Log ("will read vdd next wakeup")
 			end

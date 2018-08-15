@@ -52,6 +52,12 @@ local read_ds18b20_stage = 0
 local t
 local good
 
+local function read_ds18b20_end(dev, ndevice)
+	read_ds18b20_stage = -1
+	next_read (ndevice)
+	return false
+end
+
 local function read_ds18b20(dev, ndevice)
 ---- save memory ----
     if 1 == read_ds18b20_stage then	-- first time
@@ -60,7 +66,7 @@ local function read_ds18b20(dev, ndevice)
 	end
 	if #ow_addr < 1 then
 		Log ("no ow devices configured")
-		read_ds18b20_stage = -1 return false
+		return read_ds18b20_end(dev, ndevice)
 	end
 	if print_dofile then Log("calling ds18b20") end
 	out_bleep()
@@ -71,7 +77,7 @@ local function read_ds18b20(dev, ndevice)
 		Log("required ds18b20 failed")
 		no_ow()
 		Ri(RfailRead)
-		read_ds18b20_stage = -1 return false
+		return read_ds18b20_end(dev, ndevice)
 	end
 	local tm = tmr.now()
 	done_file (tm)
@@ -83,7 +89,7 @@ local function read_ds18b20(dev, ndevice)
 		Log ("no ds18b20 ow on pin %d", ow_pin)
 		no_ow()
 		Ri(RfailRead)
-		read_ds18b20_stage = -1 return false
+		return read_ds18b20_end(dev, ndevice)
 	end
 
 	if "" == ow_addr[1] then
@@ -91,7 +97,7 @@ local function read_ds18b20(dev, ndevice)
 		Log ("detected %d ds18b20 devices", #ow_addr)
 		if 0 == #ow_addr then
 			Ri(RfailRead)
-			read_ds18b20_stage = -1 return false
+			return read_ds18b20_end(dev, ndevice)
 		end
 	end
 
@@ -119,8 +125,7 @@ local function read_ds18b20(dev, ndevice)
 	if read_ds18b20_stage >= #ow_addr then
 		if 7+good > 15 then good = 15 - 7 end	-- 15 is max allowed
 		Trace (7+good)
-		read_ds18b20_stage = -1
-		next_read (ndevice)
+		read_ds18b20_end(dev, ndevice)
 	else
 		read_ds18b20_stage = read_ds18b20_stage + 1
 		timer:alarm(read_delay, tmr.ALARM_SINGLE, function()

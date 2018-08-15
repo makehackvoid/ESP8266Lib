@@ -129,9 +129,7 @@ local function wifi_setup()
 
 -- how long to wait after UDP send before sleeping (missing callback, a fw/SDK bug?)
 	if "udp" == save_proto then
-		udp_grace_ms = udp_grace_ms or 40
-	else
-		udp_grace_ms = 0
+		udp_grace_ms = udp_grace_ms or 50
 	end
 
 -- end of message marker
