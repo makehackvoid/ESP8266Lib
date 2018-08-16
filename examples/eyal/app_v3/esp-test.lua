@@ -1,5 +1,19 @@
 -- default setup for esp8266 (MAC unknown)
 
+--[[
+	func	gpio	gpio	func
+	----	----	----	----
+		 antenna
+	rst	.	 1	tx
+	adc	.	 3	rx
+	en	.	 5	scl
+	wake	16	 4	sca
+	sck	14	 0
+	miso	12	 2
+	mosi	13	15	cs
+	3.3v	+	-	gnd
+--]]
+
 --local gpio0  = 3	-- 3 above gnd, ESP-01, clixx o
 --local gpio1  = 10	-- 7 above ground (1st from top,Tx)
 --local gpio2  = 4	-- 2 above gnd, ESP-01, clixx i
@@ -28,5 +42,4 @@ vdd_factor    = vdd_factor    or 1
 read_device   = read_device   or "ds18b20"
 ow_pin        = ow_pin        or gpio4
 ow_addr       = ow_addr       or {""}	-- autodetect
-
 
