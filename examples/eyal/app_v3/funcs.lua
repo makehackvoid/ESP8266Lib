@@ -6,6 +6,7 @@ local Rw = rtcmem.write32
 
 function mLog (modname, message, ...)
 	if nil == print_log or print_log then
+--print (modname, message)
 		if #arg > 0 then
 			message = message:format(unpack(arg))
 		end
@@ -33,41 +34,34 @@ last_trace_h, last_trace_l = 0xffffffff, 0xffffffff
 this_trace_h, this_trace_l = 0, 0
 
 function mTrace(mod, n, new)
-	if nil ~= rtcmem then
-		if not RtracePointH then
-			RtracePointH = 127 - 8	-- see main.lua!
-			RtracePointL = RtracePointH - 1
-		end
-		if 0xffffffff == last_trace_h then	-- first call
-			last_trace_h = Rr(RtracePointH)
---			if last_trace_h < 0 then
---				last_trace_h = 0x10000000*16+last_trace_h
---			end
-			last_trace_l = Rr(RtracePointL)
---			if last_trace_l < 0 then
---				last_trace_l = 0x10000000*16+last_trace_l
---			end
---print(("%x%08x"):format(last_trace_h, last_trace_l))
-		end
-		if new or mod ~= prev_module then
-			local h = this_trace_h%0x100	-- low two digits
-			prev_trace_h = (this_trace_h-h)/0x100
-			local l = this_trace_l%0x100
-			prev_trace_l = h*0x1000000 + (this_trace_l-l)/0x100
-		-- else use last prev_trace
-		end
-		prev_module = mod
-		local t_h, t_l = this_trace_h, this_trace_l
-		this_trace_h = prev_trace_h + (mod*0x10 + n)*0x1000000
-		this_trace_l = prev_trace_l
-		if print_trace then
-			Log("mTrace(%x, %x%s) %08x%08x -> %08x%08x",
-				mod, n, (new and ", true" or ""),
-				t_h, t_l, this_trace_h, this_trace_l)
-		end
-		Rw(RtracePointH, this_trace_h)
-		Rw(RtracePointL, this_trace_l)
+	if nil == rtcmem then return end
+
+	if not RtracePointH then
+		RtracePointH = 127 - 8	-- see main.lua!
+		RtracePointL = RtracePointH - 1
 	end
+	if 0xffffffff == last_trace_h then	-- first call
+		last_trace_h = Rr(RtracePointH)
+		last_trace_l = Rr(RtracePointL)
+	end
+	if new or mod ~= prev_module then
+		local h = this_trace_h%0x100	-- low two digits
+		prev_trace_h = (this_trace_h-h)/0x100
+		local l = this_trace_l%0x100
+		prev_trace_l = h*0x1000000 + (this_trace_l-l)/0x100
+	-- else use last prev_trace
+	end
+	prev_module = mod
+	local t_h, t_l = this_trace_h, this_trace_l
+	this_trace_h = prev_trace_h + (mod*0x10 + n)*0x1000000
+	this_trace_l = prev_trace_l
+	if print_trace then
+		Log("mTrace(%x, %x%s) %08x%08x -> %08x%08x",
+			mod, n, (new and ", true" or ""),
+			t_h, t_l, this_trace_h, this_trace_l)
+	end
+	Rw(RtracePointH, this_trace_h)
+	Rw(RtracePointL, this_trace_l)
 end
 local function Trace(n, new) mTrace(1, n, new) end Trace (0, true)
 
@@ -146,6 +140,18 @@ function safe_dsleep(us, mode)
 	end
 end
 
+local function update_times(time_left)
+	if not have_rtc_mem then return end
+
+	local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
+	Rw(RlastTime, thisTime)					-- us
+	Ri(RtotalTime, (thisTime+500)/1000)			-- ms
+	if not connected then			-- tally unreported uptime
+		Ri(RfailTime, (Rr(RlastTime)+500)/1000)		-- ms
+	end
+	Rw(RtimeLeft, (time_left or 0))				-- us
+end
+
 function restart_really(time_left)
 --	if dsleep ~= node.dsleep and ow_pin then
 --		gpio.mode (ow_pin, gpio.INPUT, gpio.PULLUP)
@@ -157,6 +163,8 @@ function restart_really(time_left)
 	WAKE_NO_RFCAL    = 2 -- no CAL     after wake up, there will only be small current.
 	WAKE_RF_DISABLED = 4 -- disable RF after wake up, there will be the smallest current.
 --]]
+
+	update_times(time_left)
 
 	if nil ~= time_left and time_left > 0 then
 		local rf_mode = 1
@@ -180,14 +188,6 @@ end
 
 function restart(time_left)
 	if have_rtc_mem then
-		local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
-		Rw(RlastTime, thisTime)					-- us
-		Ri(RtotalTime, (thisTime+500)/1000)			-- ms
-		if not connected then			-- tally unreported uptime
-			Ri(RfailTime, (Rr(RlastTime)+500)/1000)		-- ms
-		end
-		Rw(RtimeLeft, (time_left or 0))				-- us
-
 		if adc_factor and vddNextTime > 0 then
 			local t = 1000*Rr(RvddNextTime)			-- ms -> us
 			local l = time_left or 0
@@ -214,6 +214,7 @@ function restart(time_left)
 		if do_vdd_read_cycle then
 			time_left = 0
 		else
+			update_times(time_left)
 			return
 		end
 	end

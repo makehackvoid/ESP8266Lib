@@ -15,6 +15,22 @@ local eventmon
 
 local timeout
 
+local function doFirst()
+	if "mqtt" == save_proto then
+		Trace (8)
+		do_file ("first-mqtt")
+	elseif "tcp" == save_proto or "udp" == save_proto then
+		Trace (9)
+		do_file ("first-tcp")
+	else
+		Trace (10)
+		Log ("unknown save_proto '%s'", save_proto)
+		runCount = 1
+		time_First = 0
+		do_file ("save")
+	end
+end
+
 local function cleanup()
 	timeout:unregister()
 	eventmon.unregister(eventmon.STA_GOT_IP)
@@ -77,7 +93,8 @@ local function have_connection(t, msg)
 	end
 	if nil == runCount then
 		if newRun then
-			do_file ("first")
+--			do_file ("first")
+			doFirst()
 			return
 		else
 			runCount = Ri(RrunCount)

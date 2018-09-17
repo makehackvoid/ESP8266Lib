@@ -51,6 +51,8 @@ local function format_message()
 				times,
 				rtc_start_s, rtc_start_u)
 		end
+--	else	-- when testing
+--		times = (" prev=L%.3f"):format(timeLast / 1000000)
 	end
 
 	local stats = ""
@@ -187,13 +189,13 @@ Log ("reading adc")
 
 	local noTemp = 0			-- or 85?
 	local tCs
-	if 0 == #temp then
+	if 0 == #temps then
 		tCs = ("%.4f"):format(noTemp)
 	else
 		tCs = ""
 		local tSep = ""
-		for n = 1,#temp do
-			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or noTemp))
+		for n = 1,#temps do
+			tCs = ("%s%s%.4f"):format(tCs, tSep, (temps[n] or noTemp))
 			tSep = ","
 		end
 	end

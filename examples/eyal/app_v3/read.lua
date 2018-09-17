@@ -1,5 +1,6 @@
 -- Note: the 'save memory' sections are used to disable some devices to fit the app into
 -- a small (512KB) flash.
+
 local tmr = tmr
 time_read = tmr.now()
 done_file (time_read)
@@ -11,11 +12,11 @@ out_bleep()
 
 local next_read
 local timer = tmr.create()
-temp = {}
+temps = {}
 
 local function no_ow()
 	for n = 1,#ow_addr do
-		temp[#temp+1] = 85
+		temps[#temps+1] = 85
 	end
 end
 
@@ -24,7 +25,7 @@ local function have_pin(pin, pin_name, device_name)
 		Log ("no %s pin for %s", pin_name, device_name)
 		return false
 	end
-	if pin < 1  or pin > 13 then	-- see GPIO_PIN_NUM in app/platform/pin_map.h
+	if pin < 1 or pin > 13 then	-- see GPIO_PIN_NUM in app/platform/pin_map.h
 		Log ("invalid %s pin %d for %s", pin_name, pin, device_name)
 		return false
 	end
@@ -51,9 +52,11 @@ end
 local read_ds18b20_stage = 0
 local t
 local good
+local convert_each = false	-- false= convert all at once
 
 local function read_ds18b20_end(dev, ndevice)
 	read_ds18b20_stage = -1
+	if not convert_each then t.convert() end
 	next_read (ndevice)
 	return false
 end
@@ -64,7 +67,7 @@ local function read_ds18b20(dev, ndevice)
 	if not have_ow(device) then
 		read_ds18b20_stage = -1 return false
 	end
-	if #ow_addr < 1 then
+	if not ow_addr or #ow_addr < 1 then
 		Log ("no ow devices configured")
 		return read_ds18b20_end(dev, ndevice)
 	end
@@ -104,7 +107,7 @@ local function read_ds18b20(dev, ndevice)
 	good = 0
     end
 
-	local tC = t.read(ow_addr[read_ds18b20_stage])
+	local tC = t.read(ow_addr[read_ds18b20_stage], nil, convert_each)
 	if tC == nil then
 		Trace (3)
 		tC = 86
@@ -114,13 +117,13 @@ local function read_ds18b20(dev, ndevice)
 		if tC == "85.0" then
 			tC = 87
 			Ri(RfailRead)
-		elseif  tC == 127.9375 then
+		elseif tC == 127.9375 then
 			tC = 88
 			Ri(RfailRead)
 		end
 	end
-	temp[#temp+1] = tC
-	Log("read[%d]=%.4f", #temp, tC)
+	temps[#temps+1] = tC
+	Log("read[%d]=%.4f", #temps, tC)
 
 	if read_ds18b20_stage >= #ow_addr then
 		if 7+good > 15 then good = 15 - 7 end	-- 15 is max allowed
@@ -196,7 +199,7 @@ local function read_bme280(device)
 --		D/100,  D%100,
 		failed)
 	Log (weather)
-	temp[#temp+1] = T/100
+	temps[#temps+1] = T/100
 
 	bme280.startreadout(1)	-- would prefer 0 but that means 'default' :-(
 	return true
@@ -204,8 +207,8 @@ local function read_bme280(device)
 --	Log ("%s is disabled", device) return false
 end
 
-local function read_ds3231(device)
 --[[ save memory ----
+local function read_ds3231(device)
 	if not have_i2c(device) then
 		return false
 	end
@@ -225,7 +228,7 @@ local function read_ds3231(device)
 	local ret
 	if t.setup (i2c_SDA, i2c_SCL) then
 		tmr.wdclr()
-		temp[#temp+1] = t.getTemp()
+		temps[#temps+1] = t.getTemp()
 		ret = true
 	else
 		Log ("ds3231 setup failed")
@@ -233,36 +236,32 @@ local function read_ds3231(device)
 	end
 
 	return ret
+--	Log ("%s is disabled", device) return false
+end
 ---- save memory --]]
-	Log ("%s is disabled", device) return false
-end
-
-if not read_device then read_device = "" end
-local devices = {}
-for device in string.gmatch(read_device, "[^,]+") do
-	devices[#devices+1] = device
-end
 
 local function done_read()
 	time_read = tmr.now() - time_read
 
 	timer:unregister()
 
-	if print_log and #temp > 0 then
+---- save memory ---- for 512KB
+	if print_log and #temps > 0 then
 		local tCs = ""
 		local tSep = ""
-		for n = 1,#temp do
-			tCs = ("%s%s%.4f"):format(tCs, tSep, (temp[n] or 0))
+		for n = 1,#temps do
+			tCs = ("%s%s%.4f"):format(tCs, tSep, (temps[n] or 0))
 			tSep = ","
 		end
 		Log ("have Reading %s", tCs)
 	end
+---- save memory ----
 
 	if do_WiFi then do_file ("wifi") end
 end
 
 local function device_read (ndevice)
-	local device = devices[ndevice]
+	local device = read_device[ndevice]
 	Log ("reading '%s'", device)
 	if device == "ds18b20" and read_ds18b20_stage >= 0 then
 		read_ds18b20_stage = 1
@@ -275,6 +274,7 @@ local function device_read (ndevice)
 	elseif device == "bme280" then
 		read_bme280(device)	-- ignore failure
 		read_bme280 = nil
+--[[ save memory ----
 	elseif device == "ds3231" then
 		read_ds3231(device)	-- ignore failure
 		read_ds3231 = nil
@@ -285,13 +285,17 @@ local function device_read (ndevice)
 			Log ("missing or failing '%s'", pgm)
 			-- ignore failure
 		end
+---- save memory --]]
+	else
+		Log ("no support for device '%s'", device)
+---- save memory ----
 	end
 
 	next_read (ndevice)
 end
 
 next_read = function (ndevice)
-	if ndevice >= #devices then
+	if not read_device or ndevice >= #read_device then
 		done_read()
 		return
 	end

@@ -167,7 +167,7 @@ end
 	return true
 end
 
-local function domain()
+local function do_main()
 	Log ("version #VERSION#")	-- will become: DATETIME DIR
 
 	local ret, magic = false, false
@@ -324,8 +324,14 @@ local function domain()
 	return true
 end
 
-if domain() then
-	domain = nil
-	do_file ("read")
+if do_main() then
+	do_main = nil
+--	if not read_device or #read_device < 1 then
+--		time_read = 0
+--		temp = {}
+--		if do_WiFi then do_file ("wifi") end
+--	else
+		do_file ("read")
+--	end
 end
 

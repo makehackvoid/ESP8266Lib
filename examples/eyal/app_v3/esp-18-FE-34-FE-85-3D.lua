@@ -2,11 +2,11 @@
 
 done_file (tmr.now())
 
---local gpio0  = 3	-- 3 above gnd, ESP-01, clixx o
---local gpio2  = 4	-- 2 above gnd, ESP-01, clixx i
-  local gpio4  = 2	-- 4 above gnd (4rd below top)
-  local gpio5  = 1	-- 5 above gnd (3rd below top)
---local gpio12 = 6	-- 2 above vcc
+  local gpio0  = 3	-- 3 above gnd, ESP-01, clixx o
+  local gpio2  = 4	-- 2 above gnd, ESP-01, clixx i
+  local gpio4  = 2	-- 4 above gnd (4th from top)
+  local gpio5  = 1	-- 5 above gnd (3rd from top)
+  local gpio12 = 6	-- 2 above vcc
   local gpio13 = 7	-- 1 above vcc
   local gpio14 = 5	-- 3 above vcc
 
@@ -25,12 +25,12 @@ vdd_factor    = vdd_factor    or 1.01	-- empirical
 --adc_factor    = adc_factor    or 1	-- empirical
 
 --[[
-read_device   = read_device   or "bme280"
+read_device   = read_device   or {"bme280"}
 i2c_SDA       = i2c_SDA       or gpio0
 i2c_SCL       = i2c_SCL       or gpio2
 --]]
 
-read_device   = read_device   or "ds18b20"
+read_device   = read_device   or {"ds18b20"}
 ow_pin        = ow_pin        or gpio4
 ow_addr       = ow_addr       or {
 				"\040\095\190\242\006\000\000\094",

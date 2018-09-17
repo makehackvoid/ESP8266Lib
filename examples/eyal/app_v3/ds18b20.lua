@@ -127,7 +127,21 @@ local function done_conversion()
 	return true
 end
 
-function read(addr, unit)
+function convert(addr, wait)
+	ow.reset(pin)
+	if (nil == addr) then
+		ow.write(pin, 0xCC, 0)	-- SKIP ROM
+	else
+		ow.select(pin, addr)
+	end
+	ow.write(pin, 0x44, 1)		-- CONVERT T
+	if (wait) then
+		if not done_conversion() then return false end
+	end
+	return true
+end
+
+function read(addr, unit, conv, wait)
 	addr = addr_check (addr)
 	if (nil == addr) then return nil end
 
@@ -144,11 +158,9 @@ function read(addr, unit)
 --	get last reading
 	local data = get_scratchpad(addr)
 
---	start next conversion
-	ow.reset(pin)
-	ow.select(pin, addr)
-	ow.write(pin, 0x44, 1)	-- CONVERT T
---	if not done_conversion() then return nil end
+	if (conv) then
+		if (not convert (addr, wait)) then return nil end
+	end
 
 	if (nil == data) then return nil end
 	local t = data:byte(1) + data:byte(2) * 256
