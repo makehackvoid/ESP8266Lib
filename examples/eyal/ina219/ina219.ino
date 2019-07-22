@@ -144,7 +144,7 @@ void loop(void)
 
     print_next_ms += 1000;   // every 1s
 
-    seconds = now_h/1000000;
+    seconds = now_us/1000000;
     sprintf (str, "%lu:%02u:%02u %lu %.3f %.2f %.3f %.3f",
       now_h, seconds/60, seconds%60,
       count,
