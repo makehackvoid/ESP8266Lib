@@ -87,3 +87,13 @@ clock/
 
 Sketches for the MHV wall clock.
 
+ina219/
+-------
+
+Sketch for reading the current sensor
+
+Adafruit_INA219/
+----------------
+
+Copy of the Adafruit library for the ina210 current sensor, with some added functions.
+

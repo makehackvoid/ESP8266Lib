@@ -9,25 +9,40 @@ Adafruit_INA219 ina219;
 #define REPORT_LONG       0   // one report a second
 #define REPORT_SHORT      0   // one report a second
 #define REPORT_VERY_SHORT 1   // one report a second
-#define REPORT_CURRENT    0   // report every reading (every about 2ms)
+#define REPORT_CURRENT    1   // report only current mAh
+
+#define REPORT_PERIOD_MS  1000   // report every so many ms (0= always)
+
+// getCurrent_mA      is the standard function.
+// getCurrentFast_mA  is faster, does not reset the calibration register.
+// setCalibration_16V_400mA     is the standard function, continuous voltage and current.
+// setCalibrationFast_16V_400mA is faster, continuous current only
+#if REPORT_CURRENT
+#define GET_CURRENT_MA  getCurrentFast_mA
+#define SET_CALIBRATION setCalibrationFast_16V_400mA
+#else
+#define GET_CURRENT_MA  getCurrent_mA
+#define SET_CALIBRATION setCalibration_16V_400mA
+#endif
 
 static unsigned long micros_start  = 0;
 static unsigned long micros_prev   = 0;
 static unsigned long print_next_ms = 0;
 
+static HardwareSerial& serial = Serial;
 
 void setup(void) 
 {
   micros_start = micros();
   micros_prev = micros_start;
 
-  Serial.begin(115200);
-  while (!Serial) {
+  serial.begin(2*115200);
+  while (!serial) {
       // will pause Zero, Leonardo, etc until serial console opens
       delay(1);
   }
 
-  Serial.println("Hello!");
+  serial.println("Hello!");
   
   // Initialize the INA219.
   // By default the initialization will use the largest range (32V, 2A).  However
@@ -36,9 +51,9 @@ void setup(void)
   // To use a slightly lower 32V, 1A range (higher precision on amps):
   //ina219.setCalibration_32V_1A();
   // Or to use a lower 16V, 400mA range (higher precision on volts and amps):
-  ina219.setCalibration_16V_400mA();
+  ina219.SET_CALIBRATION();
 
-  Serial.println("Measuring voltage and current with INA219 ...");
+  serial.println("Measuring voltage and current with INA219 ...");
 
   print_next_ms = millis();
 }
@@ -48,19 +63,15 @@ void loop(void)
   unsigned long micros_now;         // micros()
   unsigned long interval_us;        // us   increment in this cycle
   float interval_h;                 // hour increment in this cycle
-  float shuntvoltage;
   float busvoltage;
   float current_mA;
-  float loadvoltage;
   float power_mW;
   unsigned long delta;
 
   static unsigned int  micros_high = 0;  // number of micros() overflows, not used.
   static unsigned long now_us = 0;      // time now, us part of hour
   static unsigned int  now_h  = 0;      // time now, hours
-#if REPORT_LONG  || REPORT_SHORT || REPORT_VERY_SHORT
   static unsigned long count = 0;
-#endif
 #if REPORT_LONG  || REPORT_VERY_SHORT
   static unsigned long old_count = 0;
 #endif
@@ -70,9 +81,7 @@ void loop(void)
   static float current_mAh = 0;
 
 
-#if REPORT_LONG || REPORT_SHORT || REPORT_VERY_SHORT
   ++count;
-#endif
 
 ///// get time as us [micros_high:micros_now] and as h:s [now_h:now_us]
 
@@ -91,15 +100,11 @@ void loop(void)
     now_us -= HOUR_US;
   }
 
-///// get ina219 readings
+///// get ina219 readings and report
 
-  current_mA = ina219.getCurrent_mA();
+  current_mA = ina219.GET_CURRENT_MA();
     if (current_mA < 0) current_mA = 0;
   current_mAh += current_mA * interval_h;
-
-#if REPORT_LONG || REPORT_SHORT || REPORT_VERY_SHORT
-  busvoltage = ina219.getBusVoltage_V();
-#endif
 
 #if REPORT_LONG || REPORT_SHORT
   power_mW = ina219.getPower_mW();
@@ -107,50 +112,51 @@ void loop(void)
   power_mWh += power_mW * interval_h;
 #endif
 
-#if REPORT_LONG
-  shuntvoltage = ina219.getShuntVoltage_mV();
-  loadvoltage = busvoltage + (shuntvoltage / 1000);
+#if REPORT_PERIOD_MS
+  if (millis() >= print_next_ms) {
+    print_next_ms += REPORT_PERIOD_MS;
+
+#if !REPORT_CURRENT
+    busvoltage = ina219.getBusVoltage_V();
 #endif
 
-///// print report
-
 #if REPORT_LONG
-  if (millis() >= print_next_ms) {
+  {
     unsigned long now_s;
     static float current_max = 0;
+    float shuntvoltage;
+    float loadvoltage;
 
-    print_next_ms += 1000;          // every 1s
+    shuntvoltage = ina219.getShuntVoltage_mV();
+    loadvoltage = busvoltage + (shuntvoltage / 1000);
 
     if (now_h > 0) {
-      Serial.print(now_h) ; Serial.print("h");
+      serial.print(now_h) ; serial.print("h");
     }
     now_s = now_us/1000000;
-    Serial.print(now_s/60); Serial.print("m"); Serial.print(now_s%60); Serial.print("s, n=");
-        Serial.print(count); Serial.print("(+"); Serial.print(count-old_count); Serial.println(")");
+    serial.print(now_s/60); serial.print("m"); serial.print(now_s%60); serial.print("s, n=");
+        serial.print(count); serial.print("(+"); serial.print(count-old_count); serial.println(")");
     old_count = count;            
-
 
     if (current_max < current_mA)
       current_max = current_mA;
 
-    Serial.print("Bus Voltage:   "); Serial.print(busvoltage);   Serial.println(" V");
-    Serial.print("Shunt Voltage: "); Serial.print(shuntvoltage); Serial.println(" mV");
-    Serial.print("Load Voltage:  "); Serial.print(loadvoltage);  Serial.println(" V");
-    Serial.print("Current:       "); Serial.print(current_mA);   Serial.println(" mA");
-    Serial.print("Power:         "); Serial.print(power_mW);     Serial.println(" mW");
-    Serial.print("Current max:   "); Serial.print(current_max);  Serial.println(" mA");
-    Serial.print("Current total: "); Serial.print(current_mAh);  Serial.println(" mAh");
-    Serial.print("Power   total: "); Serial.print(power_mWh);    Serial.println(" mWh");
-    Serial.println("");
+    serial.print("Bus Voltage:   "); serial.print(busvoltage);   serial.println(" V");
+    serial.print("Shunt Voltage: "); serial.print(shuntvoltage); serial.println(" mV");
+    serial.print("Load Voltage:  "); serial.print(loadvoltage);  serial.println(" V");
+    serial.print("Current:       "); serial.print(current_mA);   serial.println(" mA");
+    serial.print("Power:         "); serial.print(power_mW);     serial.println(" mW");
+    serial.print("Current max:   "); serial.print(current_max);  serial.println(" mA");
+    serial.print("Current total: "); serial.print(current_mAh);  serial.println(" mAh");
+    serial.print("Power   total: "); serial.print(power_mWh);    serial.println(" mWh");
+    serial.println("");
   }
 #endif
 
 #if REPORT_SHORT
-  if (millis() >= print_next_ms) {
+  {
     unsigned int now_s;
     char str[100];
-
-    print_next_ms += 1000;              // every 1s
 
     now_s = now_us/1000000;             // part of hour
     sprintf (str, "%lu:%02u:%02u %lu %.3f %.2f %.3f %.3f",
@@ -160,30 +166,36 @@ void loop(void)
       current_mA,
       current_mAh,
       power_mWh);
-   Serial.println(str);
+   serial.println(str);
   }
 #endif
 
-#if REPORT_VERY_SHORT
-  if (millis() >= print_next_ms) {
+#if REPORT_VERY_SHORT || REPORT_CURRENT
+  {
     unsigned long now_s;
     char str[100];
 
-    print_next_ms += 1000;              // every 1s
-
     now_s = now_us/1000000 + now_h*60*60;
+
+#if REPORT_CURRENT
+    sprintf (str, "%lu.%06lu %lu %.3f",
+      now_s, now_us%1000000,
+      count - old_count,
+      current_mAh);
+#else
     sprintf (str, "%lu.%06lu %lu %.3f %.3f",
       now_s, now_us%1000000,
       count - old_count,
       busvoltage,
       current_mAh);
-    Serial.println(str);
-
-    old_count = count;            
+    serial.println(str);
+#endif
+    serial.println(str);
+    old_count = count;
   }
 #endif
-
- #if REPORT_CURRENT     // run only for a short time
-    Serial.print(now_us); Serial.print(" "); Serial.println(current_mA);
+  }
+#elif REPORT_CURRENT     // run only for a short time
+    serial.print(now_us); serial.print(" "); serial.println(current_mA);
 #endif
 }
