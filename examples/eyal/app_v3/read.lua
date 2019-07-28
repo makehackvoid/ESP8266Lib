@@ -10,7 +10,7 @@ local function Trace(n, new) mTrace(4, n, new) end Trace (0, true)
 used ()
 out_bleep()
 
-local next_read
+local next_device
 local timer = tmr.create()
 temps = {}
 
@@ -57,7 +57,7 @@ local convert_each = false	-- false= convert all at once
 local function read_ds18b20_end(dev, ndevice)
 	read_ds18b20_stage = -1
 	if not convert_each then t.convert() end
-	next_read (ndevice)
+	next_device (ndevice)
 	return false
 end
 
@@ -291,10 +291,10 @@ local function device_read (ndevice)
 ---- save memory ----
 	end
 
-	next_read (ndevice)
+	next_device (ndevice)
 end
 
-next_read = function (ndevice)
+next_device = function (ndevice)
 	if not read_device or ndevice >= #read_device then
 		done_read()
 		return
@@ -307,5 +307,5 @@ end
 
 Log ("read delay is %dms", read_delay)
 
-next_read (0)
+next_device (0)
 

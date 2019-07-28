@@ -144,6 +144,7 @@ local function update_times(time_left)
 	if not have_rtc_mem then return end
 
 	local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
+Log("RlastTime=%.6f RtimeLeft=%.6f", thisTime/1000000, (time_left or 0)/1000000)
 	Rw(RlastTime, thisTime)					-- us
 	Ri(RtotalTime, (thisTime+500)/1000)			-- ms
 	if not connected then			-- tally unreported uptime

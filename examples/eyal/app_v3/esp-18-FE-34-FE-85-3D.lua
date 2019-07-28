@@ -9,6 +9,8 @@ done_file (tmr.now())
   local gpio12 = 6	-- 2 above vcc
   local gpio13 = 7	-- 1 above vcc
   local gpio14 = 5	-- 3 above vcc
+  local gpio15 = 8	-- 1 above gnd (CS)
+  local gpio16 = 0	-- 4 above vcc (~wake)
 
 clientID      = clientID      or "esp-12a"
 network       = network       or "192.168.2."

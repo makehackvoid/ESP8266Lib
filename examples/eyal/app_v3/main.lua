@@ -55,34 +55,37 @@ local function setup_rtcmem()
 	return true
 end
 
+-- adjTime is needed cycle length (instead of sleep_time)
 local function read_vdd()
 	local adjTime = Rr(RvddAdjTime)
 	if 0 == adjTime then return true end
 
 	Trace (3, true)
 
-	-- read vdd then restart
+	-- read vdd then restart (prev was a short adc read cycle)
 	Log ("found vddAdjTime=%.6f", adjTime/1000000)
 	Rw(RvddAdjTime, 0)
 	Log ("reading vdd")
 	local vdd = adc.readvdd33(0)*(vdd_factor or 1)
+	Log ("vdd=%.3f", vdd/1000)
+
 	Rw(RvddLastRead, vdd)
 	Rw(RvddNextTime, vddNextTime)	-- new vdd cycle
 	adc.force_init_mode(adc.INIT_ADC)
 
 	-- update activity time stats
 	local thisTime = tmr.now() + (dsleep_delay+wakeup_delay)*rtc_rate	-- us
-	Rw(RlastTime, thisTime)
---	local totalTime = Rr(RtotalTime)				-- ms
---	Rw(RtotalTime, totalTime + thisTime/1000)
-	Ri(RtotalTime, thisTime/1000)
+--	Rw(RlastTime, thisTime)	-- report prev cycle (no wifi now)
+	Ri(RtotalTime, (thisTime+500)/1000)			--ms
 
 	-- sleep for how long?
 	adjTime = adjTime - thisTime
-	Log ("vdd=%.4f restart back to ADC in %.6fs", vdd, adjTime/1000000)
+	Log ("restart back to ADC in %.6fs", adjTime/1000000)
 	if adjTime < 1 then
 		adjTime = 1
 	end
+	Log ("dsleep(%.6f)", adjTime/1000000)
+	Rw(RtimeLeft, adjTime)
 	safe_dsleep (adjTime, 1)	-- enable WiFi
 	return false
 end
