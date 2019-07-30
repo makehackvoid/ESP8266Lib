@@ -95,7 +95,7 @@ Sketch for reading the current sensor. I use a NodeMCU as the controller, note t
 Adafruit_INA219/
 ----------------
 
-Copy of the Adafruit library for the ina210 current sensor, with some added functions.
+Copy of the Adafruit library for the ina219 current sensor, with some added functions.
 - A 'delay()' is removed in the reading path in wireReadRegister.
 - The rewrite of the calibration register was moved to its own function reCalibrate_raw and made user accessible as reCalibrate. Also added getCurrentFast_mA which does not recalibrate.
 - A setup for reading only the current was added: setCalibrationFast_16V_400mA
