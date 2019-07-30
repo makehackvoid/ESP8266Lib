@@ -90,10 +90,13 @@ Sketches for the MHV wall clock.
 ina219/
 -------
 
-Sketch for reading the current sensor
+Sketch for reading the current sensor. I use a NodeMCU as the controller, note that Serial1 is used (output only) because Serial is used for the USB connector which is powering the NodeMCU. The current load is an ESP8266 reading a DS18b20 temperature sensor and sending a report as a UDP packet.
 
 Adafruit_INA219/
 ----------------
 
 Copy of the Adafruit library for the ina210 current sensor, with some added functions.
+- A 'delay()' is removed in the reading path in wireReadRegister.
+- The rewrite of the calibration register was moved to its own function reCalibrate_raw and made user accessible as reCalibrate. Also added getCurrentFast_mA which does not recalibrate.
+- A setup for reading only the current was added: setCalibrationFast_16V_400mA
 
