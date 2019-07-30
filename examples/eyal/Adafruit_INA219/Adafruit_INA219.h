@@ -137,6 +137,7 @@ public:
   void setCalibrationFast_16V_400mA();
   float getBusVoltage_V();
   float getShuntVoltage_mV();
+  void reCalibrate();
   float getCurrent_mA();
   float getCurrentFast_mA();	// EL added
   float getPower_mW();
@@ -159,6 +160,7 @@ private:
   int16_t getShuntVoltage_raw();
   int16_t getCurrent_raw();
   int16_t getCurrentFast_raw();	// EL added
+  void reCalibrate_raw();
   int16_t getPower_raw();
 };
 

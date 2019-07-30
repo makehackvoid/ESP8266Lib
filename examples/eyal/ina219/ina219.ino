@@ -6,10 +6,15 @@ Adafruit_INA219 ina219;
 
 #define HOUR_US           ((unsigned long)(1000000*60*60)) // us * sec * min
 
-#define REPORT_LONG       0   // one report a second
-#define REPORT_SHORT      0   // one report a second
-#define REPORT_VERY_SHORT 1   // one report a second
-#define REPORT_CURRENT    1   // report only current mAh
+#define REPORT_LONG         0   // one report a second
+#define REPORT_SHORT        0   // one report a second
+#define REPORT_VERY_SHORT   1   // one report a second
+#define REPORT_FAST         0   // report every reading
+#define REPORT_CURRENT_ONLY 1   // report only current mAh
+
+#if REPORT_FAST
+#define REPORT_CURRENT_ONLY 1   // report only current mAh
+#endif
 
 #define REPORT_PERIOD_MS  1000   // report every so many ms (0= always)
 
@@ -17,7 +22,7 @@ Adafruit_INA219 ina219;
 // getCurrentFast_mA  is faster, does not reset the calibration register.
 // setCalibration_16V_400mA     is the standard function, continuous voltage and current.
 // setCalibrationFast_16V_400mA is faster, continuous current only
-#if REPORT_CURRENT
+#if REPORT_CURRENT_ONLY
 #define GET_CURRENT_MA  getCurrentFast_mA
 #define SET_CALIBRATION setCalibrationFast_16V_400mA
 #else
@@ -29,7 +34,7 @@ static unsigned long micros_start  = 0;
 static unsigned long micros_prev   = 0;
 static unsigned long print_next_ms = 0;
 
-static HardwareSerial& serial = Serial;
+static HardwareSerial& serial = Serial1;   // Serial1 when commissioned
 
 void setup(void) 
 {
@@ -62,7 +67,7 @@ void loop(void)
 {
   unsigned long micros_now;         // micros()
   unsigned long interval_us;        // us   increment in this cycle
-  float interval_h;                 // hour increment in this cycle
+  double interval_h;                 // hour increment in this cycle
   float busvoltage;
   float current_mA;
   float power_mW;
@@ -76,9 +81,9 @@ void loop(void)
   static unsigned long old_count = 0;
 #endif
 #if REPORT_LONG || REPORT_SHORT
-  static float power_mWh = 0;
+  static double power_mWh = 0;
 #endif
-  static float current_mAh = 0;
+  static double current_mAh = 0;
 
 
   ++count;
@@ -112,11 +117,12 @@ void loop(void)
   power_mWh += power_mW * interval_h;
 #endif
 
-#if REPORT_PERIOD_MS
   if (millis() >= print_next_ms) {
     print_next_ms += REPORT_PERIOD_MS;
 
-#if !REPORT_CURRENT
+    ina219.reCalibrate();   // in case we lost the register
+  
+#if !REPORT_CURRENT_ONLY
     busvoltage = ina219.getBusVoltage_V();
 #endif
 
@@ -170,18 +176,19 @@ void loop(void)
   }
 #endif
 
-#if REPORT_VERY_SHORT || REPORT_CURRENT
+#if REPORT_VERY_SHORT
   {
     unsigned long now_s;
     char str[100];
 
     now_s = now_us/1000000 + now_h*60*60;
 
-#if REPORT_CURRENT
-    sprintf (str, "%lu.%06lu %lu %.3f",
+#if REPORT_CURRENT_ONLY
+    sprintf (str, "%lu.%06lu %lu %.3f - %.3fmA %luus",
       now_s, now_us%1000000,
       count - old_count,
-      current_mAh);
+      current_mAh,
+      current_mA, interval_us);
 #else
     sprintf (str, "%lu.%06lu %lu %.3f %.3f",
       now_s, now_us%1000000,
@@ -193,9 +200,10 @@ void loop(void)
     serial.println(str);
     old_count = count;
   }
-#endif
+#endif  // REPORT_VERY_SHORT
   }
-#elif REPORT_CURRENT     // run only for a short time
-    serial.print(now_us); serial.print(" "); serial.println(current_mA);
+
+#if REPORT_FAST     // run only for a short time, "now_us" wraps around after 1.19h
+  serial.print(now_us); serial.print(" "); serial.println(current_mA);
 #endif
 }

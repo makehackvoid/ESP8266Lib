@@ -414,6 +414,14 @@ int16_t Adafruit_INA219::getShuntVoltage_raw() {
   return (int16_t)value;
 }
 
+void Adafruit_INA219::reCalibrate_raw() {	// EL added
+  // Sometimes a sharp load will reset the INA219, which will
+  // reset the cal register, meaning CURRENT and POWER will
+  // not be available ... avoid this by always setting a cal
+  // value even if it's an unfortunate extra step
+  wireWriteRegister(INA219_REG_CALIBRATION, ina219_calValue);
+}
+
 /*!
  *  @brief  Gets the raw current value (16-bit signed integer, so +-32767)
  *  @return the raw current reading
@@ -421,11 +429,7 @@ int16_t Adafruit_INA219::getShuntVoltage_raw() {
 int16_t Adafruit_INA219::getCurrent_raw() {
   uint16_t value;
 
-  // Sometimes a sharp load will reset the INA219, which will
-  // reset the cal register, meaning CURRENT and POWER will
-  // not be available ... avoid this by always setting a cal
-  // value even if it's an unfortunate extra step
-  wireWriteRegister(INA219_REG_CALIBRATION, ina219_calValue);
+  reCalibrate_raw();				// EL
 
   // Now we can safely read the CURRENT register!
   wireReadRegister(INA219_REG_CURRENT, &value);
@@ -437,7 +441,7 @@ int16_t Adafruit_INA219::getCurrent_raw() {
  *  @brief  Gets the raw current value (16-bit signed integer, so +-32767)
  *  @return the raw current reading
  */
-int16_t Adafruit_INA219::getCurrentFast_raw() {		// EL added
+int16_t Adafruit_INA219::getCurrentFast_raw() {	// EL added
   uint16_t value;
 
   wireReadRegister(INA219_REG_CURRENT, &value);
@@ -452,11 +456,7 @@ int16_t Adafruit_INA219::getCurrentFast_raw() {		// EL added
 int16_t Adafruit_INA219::getPower_raw() {
   uint16_t value;
 
-  // Sometimes a sharp load will reset the INA219, which will
-  // reset the cal register, meaning CURRENT and POWER will
-  // not be available ... avoid this by always setting a cal
-  // value even if it's an unfortunate extra step
-  wireWriteRegister(INA219_REG_CALIBRATION, ina219_calValue);
+  reCalibrate_raw();				// EL
 
   // Now we can safely read the POWER register!
   wireReadRegister(INA219_REG_POWER, &value);
@@ -503,6 +503,10 @@ float Adafruit_INA219::getCurrentFast_mA() {	// EL added
   float valueDec = getCurrentFast_raw();
   valueDec /= ina219_currentDivider_mA;
   return valueDec;
+}
+
+void Adafruit_INA219::reCalibrate() {		// EL added
+  reCalibrate_raw();
 }
 
 /*!
