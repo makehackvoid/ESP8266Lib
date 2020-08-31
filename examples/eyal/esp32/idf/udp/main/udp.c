@@ -11,26 +11,28 @@
 #include "wifi.h"
 
 #include <esp_log.h>
-#include <rom/rtc.h>
-#include <rom/uart.h>		// uart_tx_wait_idle()
+#include <esp32/rom/rtc.h>
+#include <esp32/rom/uart.h>	// uart_tx_wait_idle()
 #include <driver/timer.h>	// timer_get_counter_time_sec()
 #include <soc/efuse_reg.h>	// needed by getChip*()
 
 #include <soc/rtc.h>
-#include <esp_clk.h>
+#include <esp32/clk.h>
+#include <esp_sleep.h>
 
 #ifndef MY_NAME
 #define MY_NAME			"test"
 #endif
 
 #define WAKEUP_MS		160	// ms from power up to app_main
-#define SLEEP_S			60	// seconds
+#define SLEEP_S			60	// seconds, default
 #define WIFI_GRACE_MS		50	// time to wait before deep sleep to drain wifi tx
 #define WIFI_TIMEOUT_MS		5000	// time to wait for WiFi connection
 #define WIFI_DISCONNECT_MS	100	// time to wait for WiFi disconnection
 
 #define DISCONNECT		0	// 1= disconnect before deep sleep
 #define PRINT_MSG		0	// 1= print sent message if logging is off
+#define SHOW_CLOCKS		1	//  include "clocks=..."	///
 
 #define APP_CPU_AFFINITY	1	// 0, 1 or tskNO_AFFINITY
 
@@ -98,7 +100,11 @@
 #error unknown host MY_HOST
 #endif
 
-#define READ_ADC		(defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
+#if (defined(VDD_PIN) || defined(BAT_PIN) || defined(V1_PIN))
+#define READ_ADC		1
+#else
+#define READ_ADC		0
+#endif
 
 #if READ_ADC
 #include "adc.h"
@@ -135,7 +141,6 @@ int sent = 0;
 int retry_count = 0;
 bool woke_up = 0;
 
-
 RTC_DATA_ATTR static int runCount = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_us = 0;
 RTC_DATA_ATTR static uint64_t sleep_start_ticks = 0;
@@ -156,24 +161,28 @@ static uint64_t app_start_ticks = 0;
 static int wakeup_cause;
 static int reset_reason;
 
-#if 001
-// this is my simplified version of _gettimeofday_r(), added to time.c
-uint64_t gettimeofday_us(void);		// FRC
-#else
-// or you can add it here:
-uint64_t gettimeofday_us(void)
+// if you did not add gettimeofday_64 to components/newlib/time.c then enable this:
+#if 000
+uint64_t gettimeofday_64(void)
 {
 	struct timeval tv;
 
 	gettimeofday (&tv, NULL);
-	return tv.tv_sec*1000000 + tv.tv_usec;
+	return tv.tv_sec*1000000ULL + tv.tv_usec;
+}
+#endif
+
+// if you did not add system_get_time_64 to components/newlib/time.c then enable this:
+#if 000
+uint64_t system_get_time_64(void) {
+	return system_get_time();
 }
 #endif
 
 void flush_uart (void)
 {
 	fflush(stdout);
-	uart_tx_wait_idle(CONFIG_CONSOLE_UART_NUM);
+	uart_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
 }
 
 static void toggle_setup (void)
@@ -188,8 +197,8 @@ static void toggle_setup (void)
 #if USE_DELAY_BUSY
 void delay_us_busy (int us)
 {
-	uint64_t end = gettimeofday_us() + us;
-	while (gettimeofday_us() < end)
+	uint64_t end = gettimeofday_64() + us;
+	while (gettimeofday_64() < end)
 		{}
 }
 #endif
@@ -243,7 +252,7 @@ void get_time_tv (struct timeval *now)
 
 #if 000	// not used
 static uint64_t get_time_us (void) {
-	return gettimeofday_us() - app_start_us;
+	return gettimeofday_64() - app_start_us;
 }
 #endif
 
@@ -367,7 +376,7 @@ static esp_err_t do_readings (void)
 
 	flush_uart ();		// avoid uart interruptions
 
-	time_readings_us = gettimeofday_us();
+	time_readings_us = gettimeofday_64();
 	ntemps = 0;
 	rval = ESP_OK;
 
@@ -399,7 +408,7 @@ static esp_err_t do_readings (void)
 	v1 = 0;
 #endif
 
-	time_readings_us = gettimeofday_us() - time_readings_us;
+	time_readings_us = gettimeofday_64() - time_readings_us;
 
 	return rval;
 }
@@ -503,13 +512,12 @@ static int format_message (char *message, int mlen)
 		blen -= len;
 	}
 
+#if SHOW_CLOCKS
     {
-	uint64_t get_time_since_boot_64(void);		// my exported 64-bit version
-
 	uint64_t RTC   = esp_clk_rtc_time();		// R RTC time (adjusted ticks)
 		// RTC = ticks * tCal / 2^19
-	uint64_t FRC   = gettimeofday_us();		// F FRC (adjusted)
-	uint64_t FRCr  = get_time_since_boot_64();	// f FRC (raw)
+	uint64_t FRC   = gettimeofday_64();		// F FRC (adjusted)
+	uint64_t FRCr  = system_get_time_64();		// f FRC (raw)
 	uint32_t tCal = esp_clk_slowclk_cal_get();	// C slow_cal
 	uint64_t ticks = rtc_time_get();		// t RTC time (raw ticks, 150mHz)
 
@@ -521,6 +529,7 @@ static int format_message (char *message, int mlen)
 		blen -= len;
 	}
     }
+#endif
 
 #if 000
     {
@@ -636,9 +645,9 @@ static void do_grace (void)
 #if defined(WIFI_GRACE_MS) && WIFI_GRACE_MS > 0
 	toggle(3);
 Log ("delay %dms", WIFI_GRACE_MS);
-	uint64_t grace_us = gettimeofday_us();
+	uint64_t grace_us = gettimeofday_64();
 	delay_ms (WIFI_GRACE_MS + do_log*5);	// time to drain wifi queue
-	lastGrace = (int)(gettimeofday_us() - grace_us);
+	lastGrace = (int)(gettimeofday_64() - grace_us);
 #endif
 }
 
@@ -668,7 +677,7 @@ Log ("esp_deep_sleep %ds", SLEEP_S);
 		delay_ms(5);	// or else we do not see final messages
 
 	toggle(4);
-	sleep_start_us = gettimeofday_us();
+	sleep_start_us = gettimeofday_64();
 	sleep_start_ticks = rtc_time_get ();
 	prev_app_start_us = app_start_us;
 	timeLast = sleep_start_us - app_start_us;
@@ -733,7 +742,7 @@ Log ("xEventGroupCreate");
 
 void app_main ()
 {
-	app_start_us = gettimeofday_us();
+	app_start_us = gettimeofday_64();
 	app_start_ticks = rtc_time_get ();
 	app_start.tv_sec  = app_start_us / 1000000;
 	app_start.tv_usec = app_start_us % 1000000;

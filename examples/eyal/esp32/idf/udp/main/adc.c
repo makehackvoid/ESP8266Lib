@@ -16,7 +16,7 @@
 #define ADC_ATTEN	ADC_ATTEN_6db
 #define ADC_ATTEN_RATIO	(4095. / 2)
 
-static adc_atten_t adc_width = ADC_WIDTH_12Bit;
+static adc_bits_width_t adc_width = ADC_WIDTH_12Bit;
 static int adc_vref = 1199;
 
 esp_err_t adc_init (int width, int vref)
@@ -48,6 +48,7 @@ esp_err_t adc_init (int width, int vref)
 
 #if 000
 // see  components/driver/include/driver/adc.h
+// and components/soc/esp32/include/soc/adc_channel.h
 typedef enum {
     ADC1_CHANNEL_0 = 0, /*!< ADC1 channel 0 is GPIO36 */
     ADC1_CHANNEL_1,     /*!< ADC1 channel 1 is GPIO37 */
@@ -77,34 +78,83 @@ typedef enum {
 esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 {
 	adc1_channel_t channel;
+	adc_unit_t adc_unit;
 	adc_atten_t adc_atten;
 
 	*adc = 0.0;
 
 	switch (pin) {
+	case  0:
+		channel = ADC2_GPIO0_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  2:
+		channel = ADC2_GPIO2_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  4:
+		channel = ADC2_GPIO4_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  12:
+		channel = ADC2_GPIO12_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  13:
+		channel = ADC2_GPIO13_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  14:
+		channel = ADC2_GPIO14_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  15:
+		channel = ADC2_GPIO15_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  25:
+		channel = ADC2_GPIO25_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  26:
+		channel = ADC2_GPIO26_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
+	case  27:
+		channel = ADC2_GPIO27_CHANNEL;
+		adc_unit = ADC_UNIT_2;
+		break;
 	case  36:
 		channel = ADC1_GPIO36_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  37:
 		channel = ADC1_GPIO37_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  38:
 		channel = ADC1_GPIO38_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  39:
 		channel = ADC1_GPIO39_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  32:
 		channel = ADC1_GPIO32_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  33:
 		channel = ADC1_GPIO33_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  34:
 		channel = ADC1_GPIO34_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	case  35:
 		channel = ADC1_GPIO35_CHANNEL;
+		adc_unit = ADC_UNIT_1;
 		break;
 	default:
 		LogR (ESP_FAIL, "bad ADC pin %d", pin);
@@ -129,10 +179,21 @@ esp_err_t adc_read (float *adc, uint8_t pin, int atten, float divider)
 		break;
 	}
 
-	DbgR (adc1_config_channel_atten(channel, adc_atten));
+	int raw;
+	if (ADC_UNIT_1 == adc_unit) {
+		DbgR (adc1_config_channel_atten(channel, adc_atten));
+		raw = adc1_get_raw(channel);
+	} else {
+		DbgR (adc2_config_channel_atten(channel, adc_atten));
+		DbgR (adc2_get_raw(channel, adc_width, &raw));
+	}
+
 	esp_adc_cal_characteristics_t cal;
-	esp_adc_cal_get_characteristics(adc_vref, adc_atten, adc_width, &cal);
-	*adc = adc1_to_voltage(channel, &cal) / 1000. * divider;
+	esp_adc_cal_characterize(adc_unit, adc_atten, adc_width, /*vref=*/1100, &cal);
+
+	int mV = esp_adc_cal_raw_to_voltage((uint32_t)raw, &cal);
+
+	*adc = mV / 1000. * divider;
 
 	return ESP_OK;
 }

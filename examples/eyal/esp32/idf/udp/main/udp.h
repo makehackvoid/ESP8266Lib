@@ -8,6 +8,7 @@
 #include <esp_err.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
+#include "driver/gpio.h"
 
 #define BAD_TEMP	85
 
@@ -16,7 +17,8 @@ void flush_uart (void);
 void toggle(int ntimes);
 void toggle_short(int ntimes);
 void get_time_tv (struct timeval *now);
-uint64_t gettimeofday_us(void);
+uint64_t system_get_time_64(void);
+uint64_t gettimeofday_64(void);
 int do_log;
 bool woke_up;
 

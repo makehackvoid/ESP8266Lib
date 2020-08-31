@@ -34,7 +34,7 @@ static unsigned long micros_start  = 0;
 static unsigned long micros_prev   = 0;
 static unsigned long print_next_ms = 0;
 
-static HardwareSerial& serial = Serial1;   // Serial1 when commissioned
+static HardwareSerial& serial = Serial;   // Serial1 when commissioned
 
 void setup(void) 
 {
@@ -65,15 +65,15 @@ void setup(void)
 
 void loop(void) 
 {
-  unsigned long micros_now;         // micros()
-  unsigned long interval_us;        // us   increment in this cycle
-  double interval_h;                 // hour increment in this cycle
+  unsigned long micros_now;             // micros()
+  unsigned long interval_us;            // us   increment in this cycle
+  double interval_h;                    // hour increment in this cycle
   float busvoltage;
   float current_mA;
   float power_mW;
   unsigned long delta;
 
-  static unsigned int  micros_high = 0;  // number of micros() overflows, not used.
+  static unsigned int  micros_high = 0;	// number of micros() overflows, not used.
   static unsigned long now_us = 0;      // time now, us part of hour
   static unsigned int  now_h  = 0;      // time now, hours
   static unsigned long count = 0;
@@ -91,7 +91,7 @@ void loop(void)
 ///// get time as us [micros_high:micros_now] and as h:s [now_h:now_us]
 
   micros_now = micros();
-  if (micros_now < micros_prev) {     // overflow ever 1.19 hours
+  if (micros_now < micros_prev) {       // overflow ever 1.19 hours
     ++micros_high;
     interval_us = micros_now + (0xffffffff - micros_prev) + 1;
   } else
@@ -120,7 +120,7 @@ void loop(void)
   if (millis() >= print_next_ms) {
     print_next_ms += REPORT_PERIOD_MS;
 
-    ina219.reCalibrate();   // in case we lost the register
+    ina219.reCalibrate();               // in case we lost the register
   
 #if !REPORT_CURRENT_ONLY
     busvoltage = ina219.getBusVoltage_V();
@@ -184,11 +184,20 @@ void loop(void)
     now_s = now_us/1000000 + now_h*60*60;
 
 #if REPORT_CURRENT_ONLY
-    sprintf (str, "%lu.%06lu %lu %.3f - %.3fmA %luus",
+#if REPORT_DEBUG
+    sprintf (str, "%lu.%06lus %luus %lun %.3fmAh - %.3fmA",
       now_s, now_us%1000000,
+      interval_us,
       count - old_count,
       current_mAh,
-      current_mA, interval_us);
+      current_mA);
+#else
+#endif
+    sprintf (str, "%lu.%06lu %lu %lu %.3f",
+      now_s, now_us%1000000,
+      interval_us,
+      count - old_count,
+      current_mAh);
 #else
     sprintf (str, "%lu.%06lu %lu %.3f %.3f",
       now_s, now_us%1000000,

@@ -21,7 +21,7 @@
 */
 
 #include "driver/gpio.h"
-#include "rom/ets_sys.h"
+#include "esp32/rom/ets_sys.h"
 
 #include "udp.h"
 #include "ds18b20.h"

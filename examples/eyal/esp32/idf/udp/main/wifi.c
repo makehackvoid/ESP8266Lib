@@ -3,7 +3,7 @@
 
 #include <sys/socket.h>
 #include <esp_wifi.h>
-#include <esp_event_loop.h>	// esp_event_loop_init()
+#include <esp_event.h>		// esp_event_loop_init()
 #include <nvs_flash.h>
 
 // best to provide in CFLAGS: AP_SSID AP_PASS MY_IP
@@ -72,55 +72,74 @@ Log ("tcpip_adapter_set_ip_info ip=%s nm=%s gw=%s", MY_IP, MY_NM, MY_GW);
 	return ESP_OK;
 }
 
-static esp_err_t event_handler (void *ctx, system_event_t *event)
+static void have_wifi(void)
 {
-Log("event_handler: SYSTEM_EVENT %d", event->event_id);
-	switch(event->event_id) {
+	Log("have WiFi");
+
+	wifi_ap_record_t ap_info;
+	esp_wifi_sta_get_ap_info(&ap_info);
+Log("connection info: rssi=%d channel=%d", ap_info.rssi, ap_info.primary);
+
+	esp_netif_ip_info_t ip_info;
+	esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip_info);
+Log ("station info: ip=" IPSTR " nm=" IPSTR " gw=" IPSTR,
+	IP2STR(&ip_info.ip),
+	IP2STR(&ip_info.netmask),
+	IP2STR(&ip_info.gw));
+
+Log("xEventGroupSetBits");
+	xEventGroupSetBits(event_group, HAVE_WIFI);
+}
+
+//static esp_err_t event_handler (void *ctx, system_event_t *event)
+static void event_handler(void *arg, esp_event_base_t event, int32_t event_id, void *data)
+{
+Log("event_handler: SYSTEM_EVENT %d", event_id);
+	switch(event_id) {
 	case SYSTEM_EVENT_STA_START:
 		toggle(1);
 Log ("SYSTEM_EVENT_STA_START");
 		break;
 	case SYSTEM_EVENT_STA_CONNECTED:
 		toggle(1);
-		time_wifi_us = gettimeofday_us() - time_wifi_us;
-{
-		wifi_ap_record_t wifidata;
-		DbgR (esp_wifi_sta_get_ap_info(&wifidata));
-		rssi = wifidata.rssi;
-		channel = event->event_info.connected.channel;
-Log("SYSTEM_EVENT_STA_CONNECTED rssi=%d channel=%d", rssi, channel);
-}
+		time_wifi_us = gettimeofday_64() - time_wifi_us;
+Log("SYSTEM_EVENT_STA_CONNECTED");
+#if !USE_DHCPC	// treat this as SYSTEM_EVENT_STA_GOT_IP event
+		have_wifi();
+#endif
 		break;
 	case SYSTEM_EVENT_STA_GOT_IP:
 		toggle(1);
-{
-char ip[16], nm[16], gw[16];
-Log ("SYSTEM_EVENT_STA_GOT_IP ip=%s nm=%s gw=%s",
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.ip, ip, sizeof(ip)),
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.netmask, nm, sizeof(nm)),
-	ip4addr_ntoa_r(&event->event_info.got_ip.ip_info.gw, gw, sizeof(gw)));
+if (0) {
+const ip_event_got_ip_t *event = (const ip_event_got_ip_t *) data;
+Log ("SYSTEM_EVENT_STA_GOT_IP ip=" IPSTR " nm=" IPSTR " gw=" IPSTR,
+	IP2STR(&event->ip_info.ip),
+	IP2STR(&event->ip_info.netmask),
+	IP2STR(&event->ip_info.gw));
 }
-Log("xEventGroupSetBits");
-		xEventGroupSetBits(event_group, HAVE_WIFI);
+		have_wifi();
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
-Log ("SYSTEM_EVENT_STA_DISCONNECTED reason %d", event->event_info.disconnected.reason);
+{
+		wifi_event_sta_disconnected_t* disconnected = (wifi_event_sta_disconnected_t*) data;
+Log ("SYSTEM_EVENT_STA_DISCONNECTED reason %d", disconnected->reason);
 // see https://dl.espressif.com/doc/esp-idf/latest/api-guides/wifi.html#wi-fi-reason-code
+}
 		xEventGroupClearBits(event_group, HAVE_WIFI);
 
 		if (sent || ++retry_count > 1)
 			xEventGroupSetBits(event_group, NO_WIFI);
 		else {
 Log ("esp_wifi_connect retry");
-			DbgR (esp_wifi_connect());	// try once again
+			/*DbgR*/ (esp_wifi_connect());	// try once again
 		}
 		break;
 	default:
-Log ("ignoring SYSTEM_EVENT %d", event->event_id);
+Log ("ignoring SYSTEM_EVENT %d", event_id);
 		break;
 	}
 
-	return ESP_OK;
+	return ;	//ESP_OK;
 }
 
 esp_err_t wifi_setup (void)
@@ -130,11 +149,25 @@ Log ("esp_phy_load_cal_and_init");
 	esp_phy_load_cal_and_init();	// no effect
 #endif
 
-Log ("esp_event_loop_init");
-	DbgR (esp_event_loop_init(event_handler, NULL));
+Log ("esp_event_loop_create_default");
+	DbgR(esp_event_loop_create_default());
+Log ("esp_netif_create_default_wifi_sta");
+	esp_netif_create_default_wifi_sta();
 
-Log ("tcpip_adapter_init");
-	tcpip_adapter_init();
+Log("esp_event_handler_register");
+	DbgR(esp_event_handler_register(WIFI_EVENT,
+		ESP_EVENT_ANY_ID,
+		&event_handler,
+		NULL));
+
+//Log ("esp_event_loop_init");
+//	DbgR (esp_event_loop_init(event_handler, NULL));
+
+//Log ("tcpip_adapter_init");
+//	tcpip_adapter_init();
+
+Log ("esp_netif_init");
+	esp_netif_init();
 
 Log ("nvs_flash_init");
 	DbgR (nvs_flash_init());
@@ -169,7 +202,7 @@ Log ("esp_wifi_set_config(ESP_IF_WIFI_STA) ap='%s' ch=%d",
 	}
 
 Log ("esp_wifi_start");
-	time_wifi_us = gettimeofday_us();
+	time_wifi_us = gettimeofday_64();
 	DbgR (esp_wifi_start());
 
 Log ("esp_wifi_connect");
