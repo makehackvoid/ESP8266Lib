@@ -102,5 +102,10 @@ Copy of the Adafruit library for the ina219 current sensor, with some added func
 
 wifi_test/
 ----------
-Code used to test WiFi speed using Arduino and IDF. WIP.
+Code used to test WiFi speed using Arduino.
+
+wifi-v4.3/
+----------
+
+Code used to test WiFi speed using IDF.
 
