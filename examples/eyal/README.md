@@ -100,12 +100,12 @@ Copy of the Adafruit library for the ina219 current sensor, with some added func
 - The rewrite of the calibration register was moved to its own function reCalibrate_raw and made user accessible as reCalibrate. Also added getCurrentFast_mA which does not recalibrate.
 - A setup for reading only the current was added: setCalibrationFast_16V_400mA
 
-wifi_test/
-----------
-Code used to test WiFi speed using Arduino.
-
 wifi-v4.3/
 ----------
 
 Code used to test WiFi speed using IDF.
+
+wifi_test/
+----------
+Code used to test WiFi speed using Arduino.
 
