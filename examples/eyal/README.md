@@ -103,7 +103,7 @@ Copy of the Adafruit library for the ina219 current sensor, with some added func
 wifi-v4.3/
 ----------
 
-Code used to test WiFi speed using IDF.
+Code used to test WiFi speed using IDF. Now tested with IDF v4.4 and master (to be v5.0).
 
 wifi_test/
 ----------
