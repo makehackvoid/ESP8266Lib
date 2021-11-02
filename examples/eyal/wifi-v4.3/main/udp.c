@@ -64,24 +64,6 @@ static uint64_t app_start_ticks = 0;
 static int wakeup_cause;
 static int reset_reason;
 
-// if you did not add gettimeofday_64 to components/newlib/time.c then enable this:
-#if 000
-uint64_t gettimeofday_64(void)
-{
-	struct timeval tv;
-
-	gettimeofday (&tv, NULL);
-	return tv.tv_sec*1000000ULL + tv.tv_usec;
-}
-#endif
-
-// if you did not add system_get_time_64 to components/newlib/time.c then enable this:
-#if 000
-uint64_t system_get_time_64(void) {
-	return system_get_time();
-}
-#endif
-
 void flush_uart (void)
 {
 	fflush(stdout);
@@ -97,6 +79,13 @@ void delay_us_busy (int us)
 		{}
 }
 #endif
+
+uint64_t gettimeofday_64(void)
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec*1000000ULL + tv.tv_usec;
+}
 
 void get_time_tv (struct timeval *now)
 {
@@ -123,9 +112,12 @@ format_message (char *message, int mlen)
 {
 	mlen = snprintf (message, mlen,
 #if USING_EYALS_SERVER
-		"store esp-32f "
+		"store %s "
 #endif
 		"%3d: Hello World! WiFi took %lums",
+#if USING_EYALS_SERVER
+		MY_NAME,
+#endif
 		runCount, (ulong)time_wifi_us/1000);
 
 #if PRINT_MSG
