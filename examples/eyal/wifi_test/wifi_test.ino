@@ -12,12 +12,12 @@
 #define WIFI_TIMEOUT_MS  5000
 #define COUNT_LIMIT     0       // non-zero to stop after so many messages
 
-RTC_DATA_ATTR static ulong count = 0;
+RTC_DATA_ATTR static uint32_t count = 0;
 
 static WiFiUDP udp;
 
 static int haveWiFi;
-static ulong time_wifi_us;
+static uint32_t time_wifi_us;
 
 
 void setup()
@@ -100,13 +100,18 @@ void loop ()
     return;
   }
 
-  mlen = snprintf (message, sizeof(message),
-      "%3lu: Hello World! WiFi took %lums",
-      count, time_wifi_us/1000);
-  
+  if (haveWiFi)
+    mlen = snprintf (message, sizeof(message),
+        "show %s %3lu: Hello World! WiFi took %lums",
+        CL_NAME, count, time_wifi_us/1000);
+  else
+    mlen = snprintf (message, sizeof(message),
+        "%3lu: Hello World! WiFi timeout after %lums",
+        count, WIFI_TIMEOUT_MS);
+
   sendMessage();
 
-  ulong timeEnd = micros();
+  uint32_t timeEnd = micros();
   timeEnd = (timeEnd >= SLEEP_TIME_US) ? 0 : SLEEP_TIME_US - timeEnd;
   Serial.print("sleeping ");  Serial.print(timeEnd/1000); Serial.println("ms");
   Serial.flush();
