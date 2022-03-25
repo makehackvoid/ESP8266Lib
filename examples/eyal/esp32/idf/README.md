@@ -1,4 +1,4 @@
-# ulp: Examples using Espressif IDF
+# udp/: Examples using Espressif IDF
 
-# udp-ulp: use ULP to read hall sensors
+# udp-ulp/: use ULP to read hall sensors
 
