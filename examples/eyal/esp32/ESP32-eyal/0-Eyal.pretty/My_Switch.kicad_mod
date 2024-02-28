@@ -1,6 +1,6 @@
 (footprint "My_Switch" (version 20211014) (generator pcbnew)
   (layer "F.Cu")
-  (tedit 65D6047D)
+  (tedit 65DB0707)
   (descr "wire loop as test point, pitch 6.35mm, hole diameter 1.3mm, wire diameter 1.0mm")
   (tags "test point wire loop")
   (property "Sheetfile" "ESP32-eyal.kicad_sch")
@@ -26,8 +26,8 @@
   (fp_line (start -1.8 -1.8) (end -1.8 1.8) (layer "F.CrtYd") (width 0.05) (tstamp 61dbc5e3-7d82-4750-bc4a-8cd31de041b1))
   (fp_line (start 8.18 1.8) (end -1.8 1.8) (layer "F.CrtYd") (width 0.05) (tstamp 7f2fce16-8f9a-446e-9b49-89914d37a881))
   (fp_line (start 8.18 1.8) (end 8.18 -1.8) (layer "F.CrtYd") (width 0.05) (tstamp f9c63a5b-3091-4fbc-a022-6291b266eea7))
-  (pad "1" thru_hole circle (at 0 0) (size 2.6 2.6) (drill 1.3) (layers *.Cu *.Mask) (tstamp f5ebf8d7-9c53-4154-8f0d-b8aee0eb85d9))
-  (pad "2" thru_hole circle (at 6 0) (size 2.6 2.6) (drill 1.3) (layers *.Cu *.Mask) (tstamp e2dd5a38-ddc3-4101-bb03-a55f368aee79))
+  (pad "1" thru_hole circle (at 0 0) (size 2.1 2.1) (drill 1.1) (layers *.Cu *.Mask) (tstamp f5ebf8d7-9c53-4154-8f0d-b8aee0eb85d9))
+  (pad "2" thru_hole circle (at 6 0) (size 2.1 2.1) (drill 1.1) (layers *.Cu *.Mask) (tstamp e2dd5a38-ddc3-4101-bb03-a55f368aee79))
   (model "${KICAD6_3DMODEL_DIR}/TestPoint.3dshapes/TestPoint_Bridge_Pitch6.35mm_Drill1.3mm.wrl"
     (offset (xyz 0 0 0))
     (scale (xyz 1 1 1))
