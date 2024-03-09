@@ -17,7 +17,7 @@
   (tbtext "${KICAD_VERSION}" (name "") (pos 109 4.1) (comment "Kicad version")
 )
   (line (name "") (start 110 8.5) (end 2 8.5))
-  (tbtext "Rev: 1" (name "") (pos 24 6.9) (font bold))
+  (tbtext "Rev: 2" (name "") (pos 24 6.9) (font bold))
   (tbtext "Size: ${PAPER}" (name "") (pos 109 6.9) (comment "Paper format name")
 )
   (tbtext "Id: ${#}/${##}" (name "") (pos 24 4.1) (comment "Sheet id")
